@@ -71,21 +71,25 @@ export default function SignUpForm() {
       const normalizedPhone = normalizePhone(formData.phone);
 
       // Sign up with Supabase Auth
-      const { data: authData, error: signUpError } = await supabase.auth.signUp({
-        email: formData.email,
-        password: formData.password,
-        options: {
-          data: {
-            full_name: formData.name,
-            phone: normalizedPhone,
-            role: formData.role,
+      const { data: authData, error: signUpError } = await supabase.auth.signUp(
+        {
+          email: formData.email,
+          password: formData.password,
+          options: {
+            data: {
+              full_name: formData.name,
+              phone: normalizedPhone,
+              role: formData.role,
+            },
           },
         },
-      });
+      );
 
       if (signUpError) {
         if (signUpError.message.includes('already registered')) {
-          setErrors({ email: 'This email is already registered. Please login instead.' });
+          setErrors({
+            email: 'This email is already registered. Please login instead.',
+          });
         } else {
           setErrors({ form: signUpError.message });
         }
@@ -97,8 +101,8 @@ export default function SignUpForm() {
         const { error: profileError } = await supabase.from('users').insert({
           id: authData.user.id,
           email: formData.email,
-          name: formData.name,
-          phone: normalizedPhone,
+          full_name: formData.name,
+          phone_number: normalizedPhone,
           role: formData.role,
           kyc_status: 'pending',
           created_at: new Date().toISOString(),
@@ -112,7 +116,9 @@ export default function SignUpForm() {
         }
       }
 
-      setSuccessMessage('Account created successfully! Redirecting to login...');
+      setSuccessMessage(
+        'Account created successfully! Redirecting to login...',
+      );
 
       // Redirect after 2 seconds
       setTimeout(() => {
@@ -167,7 +173,9 @@ export default function SignUpForm() {
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Full Name */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Full Name
+            </label>
             <input
               type="text"
               name="name"
@@ -179,12 +187,16 @@ export default function SignUpForm() {
               }`}
               disabled={loading}
             />
-            {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name}</p>}
+            {errors.name && (
+              <p className="text-red-500 text-xs mt-1">{errors.name}</p>
+            )}
           </div>
 
           {/* Email */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Email Address
+            </label>
             <input
               type="email"
               name="email"
@@ -196,7 +208,9 @@ export default function SignUpForm() {
               }`}
               disabled={loading}
             />
-            {errors.email && <p className="text-red-500 text-xs mt-1">{errors.email}</p>}
+            {errors.email && (
+              <p className="text-red-500 text-xs mt-1">{errors.email}</p>
+            )}
           </div>
 
           {/* Phone */}
@@ -215,12 +229,16 @@ export default function SignUpForm() {
               }`}
               disabled={loading}
             />
-            {errors.phone && <p className="text-red-500 text-xs mt-1">{errors.phone}</p>}
+            {errors.phone && (
+              <p className="text-red-500 text-xs mt-1">{errors.phone}</p>
+            )}
           </div>
 
           {/* Role Selection */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">I am a:</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              I am a:
+            </label>
             <select
               name="role"
               value={formData.role}
@@ -234,12 +252,16 @@ export default function SignUpForm() {
               <option value="seller">Seller</option>
               <option value="both">Both Buyer & Seller</option>
             </select>
-            {errors.role && <p className="text-red-500 text-xs mt-1">{errors.role}</p>}
+            {errors.role && (
+              <p className="text-red-500 text-xs mt-1">{errors.role}</p>
+            )}
           </div>
 
           {/* Password */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Password
+            </label>
             <input
               type="password"
               name="password"
@@ -254,8 +276,12 @@ export default function SignUpForm() {
             {formData.password && (
               <div className="mt-2">
                 <div className="flex justify-between items-center mb-1">
-                  <span className="text-xs text-gray-600">Password strength:</span>
-                  <span className="text-xs font-medium text-gray-700">{getPasswordStrengthText()}</span>
+                  <span className="text-xs text-gray-600">
+                    Password strength:
+                  </span>
+                  <span className="text-xs font-medium text-gray-700">
+                    {getPasswordStrengthText()}
+                  </span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-2">
                   <div
@@ -265,12 +291,16 @@ export default function SignUpForm() {
                 </div>
               </div>
             )}
-            {errors.password && <p className="text-red-500 text-xs mt-1">{errors.password}</p>}
+            {errors.password && (
+              <p className="text-red-500 text-xs mt-1">{errors.password}</p>
+            )}
           </div>
 
           {/* Confirm Password */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Confirm Password</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Confirm Password
+            </label>
             <input
               type="password"
               name="confirmPassword"
@@ -283,7 +313,9 @@ export default function SignUpForm() {
               disabled={loading}
             />
             {errors.confirmPassword && (
-              <p className="text-red-500 text-xs mt-1">{errors.confirmPassword}</p>
+              <p className="text-red-500 text-xs mt-1">
+                {errors.confirmPassword}
+              </p>
             )}
           </div>
 
@@ -300,7 +332,10 @@ export default function SignUpForm() {
         {/* Login Link */}
         <p className="text-center text-gray-600 text-sm mt-6">
           Already have an account?{' '}
-          <Link href="/auth/login" className="text-blue-600 hover:text-blue-700 font-medium">
+          <Link
+            href="/auth/login"
+            className="text-blue-600 hover:text-blue-700 font-medium"
+          >
             Login here
           </Link>
         </p>
