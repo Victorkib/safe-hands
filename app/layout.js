@@ -1,0 +1,39 @@
+import { Geist, Geist_Mono } from 'next/font/google';
+import { Analytics } from '@vercel/analytics/next';
+import './globals.css';
+
+const geist = Geist({ subsets: ['latin'] });
+const geistMono = Geist_Mono({ subsets: ['latin'] });
+
+export const metadata = {
+  title: 'Safe Hands Escrow - Secure P2P Transactions',
+  description: 'A trusted escrow platform for secure peer-to-peer transactions in Kenya',
+  keywords: 'escrow, p2p, transactions, kenya, mpesa, buyer, seller',
+  authors: [{ name: 'Safe Hands Escrow Team' }],
+  viewport: {
+    width: 'device-width',
+    initialScale: 1,
+    maximumScale: 5,
+    userScalable: true,
+  },
+  openGraph: {
+    title: 'Safe Hands Escrow',
+    description: 'Secure peer-to-peer transactions with escrow protection',
+    type: 'website',
+  },
+};
+
+export default function RootLayout({ children }) {
+  return (
+    <html lang="en" className="scroll-smooth">
+      <head>
+        <meta name="theme-color" content="#0f172a" />
+        <link rel="icon" href="/favicon.ico" />
+      </head>
+      <body className={`${geist.className} antialiased bg-slate-50 text-slate-900`}>
+        {children}
+        {process.env.NODE_ENV === 'production' && <Analytics />}
+      </body>
+    </html>
+  );
+}
