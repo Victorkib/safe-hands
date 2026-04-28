@@ -2,62 +2,72 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabaseClient';
 import { validateField, validatePhone, normalizePhone } from '@/lib/validation';
 
 export default function ProfilePage() {
   const router = useRouter();
-  const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
   const [successMessage, setSuccessMessage] = useState('');
+  const [messageTimeout, setMessageTimeout] = useState(null);
 
   const [formData, setFormData] = useState({
-    name: '',
-    phone: '',
-    role: '',
+    full_name: '',
+    phone_number: '',
+    bio: '',
+    profile_picture_url: '',
   });
 
-  useEffect(() => {
-    const fetchUserProfile = async () => {
-      try {
-        const {
-          data: { user: authUser },
-        } = await supabase.auth.getUser();
+  // Fetch profile using our unified API
+  const fetchProfile = async () => {
+    try {
+      // Get the access token from localStorage
+      const { supabase } = await import('@/lib/supabaseClient');
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
 
-        if (!authUser) {
-          router.push('/auth/login');
-          return;
-        }
-
-        setUser(authUser);
-
-        // Fetch user profile
-        const { data: userProfile, error } = await supabase
-          .from('users')
-          .select('*')
-          .eq('id', authUser.id)
-          .single();
-
-        if (!error && userProfile) {
-          setProfile(userProfile);
-          setFormData({
-            name: userProfile.name || '',
-            phone: userProfile.phone || '',
-            role: userProfile.role || '',
-          });
-        }
-      } catch (error) {
-        console.error('Error fetching profile:', error);
-      } finally {
+      if (!session?.access_token) {
+        router.push('/auth/login');
         setLoading(false);
+        return;
       }
-    };
 
-    fetchUserProfile();
+      // Fetch profile with Authorization header
+      const response = await fetch('/api/user/profile', {
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+
+      if (response.status === 401) {
+        router.push('/auth/login');
+        return;
+      }
+
+      const result = await response.json();
+
+      if (result.success && result.data) {
+        setProfile(result.data);
+        setFormData({
+          full_name: result.data.full_name || '',
+          phone_number: result.data.phone_number || '',
+          bio: result.data.bio || '',
+          profile_picture_url: result.data.profile_picture_url || '',
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching profile:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchProfile();
   }, [router]);
 
   const handleInputChange = (e) => {
@@ -80,38 +90,68 @@ export default function ProfilePage() {
     setErrors({});
     setSuccessMessage('');
 
-    // Validate phone if changed
-    if (formData.phone && !validatePhone(formData.phone)) {
-      setErrors({ phone: 'Invalid phone number' });
+    // Validate
+    if (!formData.full_name.trim()) {
+      setErrors({ full_name: 'Full name is required' });
+      return;
+    }
+
+    if (formData.phone_number && !validatePhone(formData.phone_number)) {
+      setErrors({ phone_number: 'Invalid phone number format' });
       return;
     }
 
     setSaving(true);
 
     try {
-      const updateData = {
-        name: formData.name,
-        phone: formData.phone ? normalizePhone(formData.phone) : formData.phone,
-        updated_at: new Date().toISOString(),
-      };
+      // Ensure we have an access token for authenticated API calls
+      const { supabase } = await import('@/lib/supabaseClient');
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
 
-      const { error } = await supabase
-        .from('users')
-        .update(updateData)
-        .eq('id', user.id);
-
-      if (error) {
-        setErrors({ form: error.message });
+      if (!session?.access_token) {
+        router.push('/auth/login');
+        setSaving(false);
         return;
       }
 
-      setProfile({ ...profile, ...updateData });
+      const updateData = {
+        full_name: formData.full_name.trim(),
+        phone: formData.phone_number
+          ? normalizePhone(formData.phone_number)
+          : null,
+        bio: formData.bio.trim(),
+        profile_picture_url: formData.profile_picture_url.trim(),
+      };
+
+      const response = await fetch('/api/user/profile', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify(updateData),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        setErrors({ form: result.error || 'Failed to update profile' });
+        return;
+      }
+
+      // Update local profile
+      setProfile(result.data);
       setSuccessMessage('Profile updated successfully!');
       setEditing(false);
 
-      setTimeout(() => {
+      // Clear message after 3 seconds
+      if (messageTimeout) clearTimeout(messageTimeout);
+      const timeout = setTimeout(() => {
         setSuccessMessage('');
       }, 3000);
+      setMessageTimeout(timeout);
     } catch (error) {
       console.error('Error updating profile:', error);
       setErrors({ form: 'Failed to update profile' });
@@ -122,10 +162,48 @@ export default function ProfilePage() {
 
   const handleLogout = async () => {
     try {
+      const { supabase } = await import('@/lib/supabaseClient');
       await supabase.auth.signOut();
       router.push('/');
     } catch (error) {
       console.error('Logout error:', error);
+    }
+  };
+
+  const getRoleDisplay = (role) => {
+    switch (role) {
+      case 'buyer_seller':
+        return 'Buyer & Seller';
+      case 'admin':
+        return 'Administrator';
+      default:
+        return role?.charAt(0).toUpperCase() + role?.slice(1) || 'User';
+    }
+  };
+
+  const getRoleColor = (role) => {
+    switch (role) {
+      case 'buyer':
+        return 'bg-blue-100 text-blue-800';
+      case 'seller':
+        return 'bg-green-100 text-green-800';
+      case 'buyer_seller':
+        return 'bg-purple-100 text-purple-800';
+      case 'admin':
+        return 'bg-red-100 text-red-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const getKYCStatusColor = (status) => {
+    switch (status) {
+      case 'approved':
+        return 'bg-green-100 text-green-800';
+      case 'rejected':
+        return 'bg-red-100 text-red-800';
+      default:
+        return 'bg-yellow-100 text-yellow-800';
     }
   };
 
@@ -141,158 +219,477 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto">
+    <div className="max-w-4xl mx-auto px-4 py-8">
       {/* Header */}
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900">My Profile</h1>
-        <p className="text-gray-600 mt-2">Manage your account information</p>
+        <p className="text-gray-600 mt-2">
+          Manage your account information and settings
+        </p>
       </div>
 
       {/* Success Message */}
       {successMessage && (
-        <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+        <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg flex items-center">
+          <svg
+            className="w-5 h-5 text-green-600 mr-2"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2"
+              d="M5 13l4 4L19 7"
+            />
+          </svg>
           <p className="text-green-800">{successMessage}</p>
         </div>
       )}
 
       {/* Error Message */}
       {errors.form && (
-        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center">
+          <svg
+            className="w-5 h-5 text-red-600 mr-2"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2"
+              d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+            />
+          </svg>
           <p className="text-red-800">{errors.form}</p>
         </div>
       )}
 
-      {/* Profile Card */}
-      <div className="bg-white rounded-lg shadow p-8">
-        {/* Email Section (Read-only) */}
-        <div className="mb-8 pb-8 border-b">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Email Address</h2>
-          <p className="text-gray-700 font-mono">{user?.email}</p>
-          <p className="text-xs text-gray-500 mt-2">This is your login email. Contact support to change it.</p>
-        </div>
-
-        {/* Editable Profile Form */}
-        <form onSubmit={handleSaveProfile}>
-          {/* Name */}
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
-            {!editing ? (
-              <p className="text-gray-700 py-2">{formData.name || 'Not provided'}</p>
-            ) : (
-              <>
-                <input
-                  type="text"
-                  name="name"
-                  value={formData.name}
-                  onChange={handleInputChange}
-                  placeholder="Your full name"
-                  className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition ${
-                    errors.name ? 'border-red-500' : 'border-gray-300'
-                  }`}
-                  disabled={saving}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* Profile Card */}
+        <div className="md:col-span-1">
+          <div className="bg-white rounded-lg shadow p-6 text-center">
+            {/* Avatar */}
+            <div className="mb-4">
+              {profile?.profile_picture_url ? (
+                <img
+                  src={profile.profile_picture_url}
+                  alt={profile.full_name}
+                  className="w-24 h-24 rounded-full mx-auto object-cover border-4 border-blue-100"
                 />
-                {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name}</p>}
-              </>
-            )}
-          </div>
+              ) : (
+                <div className="w-24 h-24 rounded-full mx-auto bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-2xl font-bold border-4 border-blue-100">
+                  {profile?.full_name?.charAt(0)?.toUpperCase() || 'U'}
+                </div>
+              )}
+            </div>
 
-          {/* Phone */}
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-2">Phone Number</label>
-            {!editing ? (
-              <p className="text-gray-700 py-2 font-mono">{formData.phone || 'Not provided'}</p>
-            ) : (
-              <>
-                <input
-                  type="tel"
-                  name="phone"
-                  value={formData.phone}
-                  onChange={handleInputChange}
-                  placeholder="07 XXXX XXXX"
-                  className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition ${
-                    errors.phone ? 'border-red-500' : 'border-gray-300'
-                  }`}
-                  disabled={saving}
-                />
-                {errors.phone && <p className="text-red-500 text-xs mt-1">{errors.phone}</p>}
-              </>
-            )}
-          </div>
+            {/* Name and Role */}
+            <h2 className="text-xl font-bold text-gray-900 mb-2">
+              {profile?.full_name || 'Not provided'}
+            </h2>
 
-          {/* Role */}
-          <div className="mb-8">
-            <label className="block text-sm font-medium text-gray-700 mb-2">Account Type</label>
-            <p className="text-gray-700 py-2 capitalize">
-              {formData.role === 'both' ? 'Buyer & Seller' : formData.role}
+            <span
+              className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${getRoleColor(profile?.role)}`}
+            >
+              {getRoleDisplay(profile?.role)}
+            </span>
+
+            {/* Email */}
+            <p className="text-sm text-gray-600 mt-4 break-all">
+              {profile?.email}
             </p>
-            <p className="text-xs text-gray-500 mt-2">Contact support to change your account type.</p>
+
+            {/* Email Verified Badge */}
+            <div className="mt-3 flex items-center justify-center">
+              {profile?.email_verified ? (
+                <span className="flex items-center text-xs text-green-600">
+                  <svg
+                    className="w-4 h-4 mr-1"
+                    fill="currentColor"
+                    viewBox="0 0 20 20"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                  Verified
+                </span>
+              ) : (
+                <span className="text-xs text-yellow-600">Not verified</span>
+              )}
+            </div>
           </div>
 
-          {/* Account Info */}
-          <div className="mb-8 pb-8 border-b">
-            <h3 className="text-sm font-medium text-gray-700 mb-3">Account Information</h3>
-            <div className="space-y-3 text-sm">
-              <div className="flex justify-between">
-                <span className="text-gray-600">Member Since:</span>
-                <span className="text-gray-900 font-medium">
-                  {new Date(profile?.created_at).toLocaleDateString()}
+          {/* Quick Stats */}
+          <div className="bg-white rounded-lg shadow p-6 mt-6">
+            <h3 className="text-sm font-semibold text-gray-900 mb-4">
+              Account Stats
+            </h3>
+
+            <div className="space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-600">Transactions</span>
+                <span className="font-semibold text-gray-900">
+                  {profile?.total_transactions_completed || 0}
                 </span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">KYC Status:</span>
-                <span className={`font-medium capitalize ${profile?.kyc_status === 'verified' ? 'text-green-600' : 'text-yellow-600'}`}>
-                  {profile?.kyc_status}
+
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-600">Rating</span>
+                <span className="font-semibold text-gray-900">
+                  {profile?.avg_rating ? `${profile.avg_rating} ⭐` : 'N/A'}
+                </span>
+              </div>
+
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-600">Balance</span>
+                <span className="font-semibold text-gray-900">
+                  KES {profile?.account_balance?.toFixed(2) || '0.00'}
                 </span>
               </div>
             </div>
           </div>
+        </div>
 
-          {/* Action Buttons */}
-          <div className="flex gap-4">
-            {!editing ? (
-              <>
+        {/* Main Profile Form */}
+        <div className="md:col-span-2">
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-bold text-gray-900">
+                Profile Information
+              </h2>
+              {!editing && (
                 <button
                   type="button"
                   onClick={() => setEditing(true)}
-                  className="flex-1 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition font-medium"
+                  className="px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition"
                 >
                   Edit Profile
                 </button>
-                <button
-                  type="button"
-                  onClick={handleLogout}
-                  className="flex-1 bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 transition font-medium"
-                >
-                  Logout
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="flex-1 bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 transition font-medium disabled:bg-gray-400"
-                >
-                  {saving ? 'Saving...' : 'Save Changes'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditing(false);
-                    setFormData({
-                      name: profile?.name || '',
-                      phone: profile?.phone || '',
-                      role: profile?.role || '',
-                    });
-                  }}
-                  className="flex-1 bg-gray-400 text-white py-2 rounded-lg hover:bg-gray-500 transition font-medium"
-                >
-                  Cancel
-                </button>
-              </>
-            )}
+              )}
+            </div>
+
+            <form onSubmit={handleSaveProfile}>
+              {/* Full Name */}
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Full Name <span className="text-red-500">*</span>
+                </label>
+                {!editing ? (
+                  <p className="text-gray-900 py-2 border-b border-gray-200">
+                    {profile?.full_name || 'Not provided'}
+                  </p>
+                ) : (
+                  <>
+                    <input
+                      type="text"
+                      name="full_name"
+                      value={formData.full_name}
+                      onChange={handleInputChange}
+                      placeholder="Your full name"
+                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition ${
+                        errors.full_name ? 'border-red-500' : 'border-gray-300'
+                      }`}
+                      disabled={saving}
+                    />
+                    {errors.full_name && (
+                      <p className="text-red-500 text-xs mt-1">
+                        {errors.full_name}
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+
+              {/* Email (Read-only) */}
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Email Address
+                </label>
+                <p className="text-gray-500 py-2 text-sm">
+                  {profile?.email} (Cannot be changed)
+                </p>
+              </div>
+
+              {/* Phone Number */}
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Phone Number
+                </label>
+                {!editing ? (
+                  <p className="text-gray-900 py-2 border-b border-gray-200 font-mono">
+                    {profile?.phone_number || 'Not provided'}
+                  </p>
+                ) : (
+                  <>
+                    <input
+                      type="tel"
+                      name="phone_number"
+                      value={formData.phone_number}
+                      onChange={handleInputChange}
+                      placeholder="07 XXXX XXXX or +254XXXXXXXXX"
+                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition ${
+                        errors.phone_number
+                          ? 'border-red-500'
+                          : 'border-gray-300'
+                      }`}
+                      disabled={saving}
+                    />
+                    {errors.phone_number && (
+                      <p className="text-red-500 text-xs mt-1">
+                        {errors.phone_number}
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+
+              {/* Bio */}
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Bio
+                </label>
+                {!editing ? (
+                  <p className="text-gray-900 py-2 border-b border-gray-200 min-h-[60px]">
+                    {profile?.bio || 'Not provided'}
+                  </p>
+                ) : (
+                  <>
+                    <textarea
+                      name="bio"
+                      value={formData.bio}
+                      onChange={handleInputChange}
+                      placeholder="Tell others about yourself..."
+                      rows="3"
+                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition resize-none"
+                      disabled={saving}
+                    />
+                  </>
+                )}
+              </div>
+
+              {/* Profile Picture URL */}
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Profile Picture URL
+                </label>
+                {!editing ? (
+                  <p className="text-gray-900 py-2 border-b border-gray-200 text-sm break-all">
+                    {profile?.profile_picture_url || 'Not provided'}
+                  </p>
+                ) : (
+                  <>
+                    <input
+                      type="url"
+                      name="profile_picture_url"
+                      value={formData.profile_picture_url}
+                      onChange={handleInputChange}
+                      placeholder="https://example.com/avatar.jpg"
+                      className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
+                      disabled={saving}
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Enter a URL to an image for your profile picture
+                    </p>
+                  </>
+                )}
+              </div>
+
+              {/* Account Information */}
+              <div className="border-t pt-6 mt-6">
+                <h3 className="text-sm font-semibold text-gray-900 mb-4">
+                  Account Information
+                </h3>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-gray-600">Member Since</p>
+                    <p className="font-medium text-gray-900">
+                      {profile?.created_at
+                        ? new Date(profile.created_at).toLocaleDateString(
+                            'en-US',
+                            {
+                              year: 'numeric',
+                              month: 'long',
+                              day: 'numeric',
+                            },
+                          )
+                        : 'N/A'}
+                    </p>
+                  </div>
+
+                  <div>
+                    <p className="text-sm text-gray-600">KYC Status</p>
+                    <span
+                      className={`inline-block mt-1 px-3 py-1 rounded-full text-xs font-medium ${getKYCStatusColor(profile?.kyc_status)}`}
+                    >
+                      {profile?.kyc_status?.toUpperCase() || 'PENDING'}
+                    </span>
+                  </div>
+
+                  <div>
+                    <p className="text-sm text-gray-600">Last Login</p>
+                    <p className="font-medium text-gray-900">
+                      {profile?.last_login
+                        ? new Date(profile.last_login).toLocaleString()
+                        : 'Never'}
+                    </p>
+                  </div>
+
+                  <div>
+                    <p className="text-sm text-gray-600">Account Status</p>
+                    <span
+                      className={`inline-block mt-1 px-3 py-1 rounded-full text-xs font-medium ${profile?.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}
+                    >
+                      {profile?.is_active ? 'ACTIVE' : 'INACTIVE'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              {editing && (
+                <div className="flex gap-4 mt-8">
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="flex-1 bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition font-medium disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center"
+                  >
+                    {saving ? (
+                      <>
+                        <svg
+                          className="animate-spin -ml-1 mr-2 h-4 w-4 text-white"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                        >
+                          <circle
+                            className="opacity-25"
+                            cx="12"
+                            cy="12"
+                            r="10"
+                            stroke="currentColor"
+                            strokeWidth="4"
+                          ></circle>
+                          <path
+                            className="opacity-75"
+                            fill="currentColor"
+                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                          ></path>
+                        </svg>
+                        Saving...
+                      </>
+                    ) : (
+                      'Save Changes'
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditing(false);
+                      setFormData({
+                        full_name: profile?.full_name || '',
+                        phone_number: profile?.phone_number || '',
+                        bio: profile?.bio || '',
+                        profile_picture_url: profile?.profile_picture_url || '',
+                      });
+                      setErrors({});
+                    }}
+                    className="flex-1 bg-gray-300 text-gray-700 py-3 rounded-lg hover:bg-gray-400 transition font-medium"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+            </form>
           </div>
-        </form>
+
+          {/* Additional Actions */}
+          <div className="bg-white rounded-lg shadow p-6 mt-6">
+            <h3 className="text-lg font-bold text-gray-900 mb-4">
+              Additional Actions
+            </h3>
+
+            <div className="space-y-3">
+              <button
+                onClick={() => router.push('/auth/forgot-password')}
+                className="w-full flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition"
+              >
+                <div className="flex items-center">
+                  <svg
+                    className="w-5 h-5 text-gray-600 mr-3"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                      d="M15 7a2 2 0 012 2m4 0a6 6 0 01-6 6H9a6 6 0 01-6-6c0-1 .5-2 2-2h2a2 2 0 012 2z"
+                    />
+                  </svg>
+                  <span className="font-medium text-gray-900">
+                    Change Password
+                  </span>
+                </div>
+                <svg
+                  className="w-5 h-5 text-gray-400"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M9 5l7 7-7 7"
+                  />
+                </svg>
+              </button>
+
+              <button
+                onClick={handleLogout}
+                className="w-full flex items-center justify-between p-4 border border-red-200 rounded-lg hover:bg-red-50 transition"
+              >
+                <div className="flex items-center">
+                  <svg
+                    className="w-5 h-5 text-red-600 mr-3"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                      d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
+                    />
+                  </svg>
+                  <span className="font-medium text-red-600">Logout</span>
+                </div>
+                <svg
+                  className="w-5 h-5 text-gray-400"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M9 5l7 7-7 7"
+                  />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

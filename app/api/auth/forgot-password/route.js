@@ -7,32 +7,7 @@
 import { supabaseAdmin } from '@/lib/supabaseClient.js';
 import { createPasswordResetToken } from '@/lib/tokenService.js';
 import { sendPasswordResetEmail } from '@/lib/emailService.js';
-
-// Simple in-memory rate limiting
-const forgotAttempts = new Map();
-
-function checkRateLimit(email, limitPerSeconds = 300) {
-  const now = Date.now();
-  const lastAttempt = forgotAttempts.get(email);
-
-  if (lastAttempt && now - lastAttempt < limitPerSeconds * 1000) {
-    return false; // Rate limited
-  }
-
-  forgotAttempts.set(email, now);
-
-  // Cleanup old entries
-  if (forgotAttempts.size > 1000) {
-    const cutoff = now - 30 * 60 * 1000; // Clear entries older than 30 minutes
-    for (const [key, value] of forgotAttempts.entries()) {
-      if (value < cutoff) {
-        forgotAttempts.delete(key);
-      }
-    }
-  }
-
-  return true;
-}
+import { checkRateLimit, getRateLimitHeaders } from '@/lib/rateLimiter.js';
 
 export async function POST(request) {
   try {
@@ -40,19 +15,23 @@ export async function POST(request) {
     const { email } = body;
 
     if (!email) {
-      return Response.json(
-        { error: 'Email is required' },
-        { status: 400 }
-      );
+      return Response.json({ error: 'Email is required' }, { status: 400 });
     }
 
     console.log('[v0] /api/auth/forgot-password - Email:', email);
 
-    // Check rate limiting (5 minutes between attempts)
-    if (!checkRateLimit(email, 300)) {
+    // Check rate limiting (only active in production)
+    const rateLimitResult = checkRateLimit(email, 'email');
+    if (!rateLimitResult.allowed) {
       return Response.json(
-        { error: 'Please wait 5 minutes before requesting another password reset' },
-        { status: 429 }
+        {
+          error: 'Too many requests',
+          message: `Please wait ${rateLimitResult.retryAfter} seconds before requesting another password reset`,
+        },
+        {
+          status: 429,
+          headers: getRateLimitHeaders(rateLimitResult),
+        },
       );
     }
 
@@ -68,7 +47,8 @@ export async function POST(request) {
       console.warn('[v0] User not found for password reset, email:', email);
       return Response.json({
         success: true,
-        message: 'If this email exists in our system, a password reset link will be sent.',
+        message:
+          'If this email exists in our system, a password reset link will be sent.',
       });
     }
 
@@ -84,13 +64,20 @@ export async function POST(request) {
     console.log('[v0] Sending password reset email to:', email);
 
     // Send password reset email
-    const emailResult = await sendPasswordResetEmail(user.full_name || 'User', email, resetLink);
+    const emailResult = await sendPasswordResetEmail(
+      user.full_name || 'User',
+      email,
+      resetLink,
+    );
 
     if (!emailResult.success) {
-      console.error('[v0] Password reset email sending failed:', emailResult.error);
+      console.error(
+        '[v0] Password reset email sending failed:',
+        emailResult.error,
+      );
       return Response.json(
         { error: 'Failed to send password reset email. Please try again.' },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
@@ -105,7 +92,7 @@ export async function POST(request) {
     console.error('[v0] Forgot password error:', error.message);
     return Response.json(
       { error: 'An error occurred. Please try again.' },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

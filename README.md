@@ -18,11 +18,12 @@ Safe Hands Escrow is a full-stack web application built with Next.js and Supabas
 - **Frontend:** Next.js 16 (JavaScript), React 19, Tailwind CSS
 - **Backend:** Next.js API Routes, Supabase
 - **Database:** PostgreSQL (Supabase)
-- **Authentication:** Supabase Auth, JWT tokens
+- **Authentication:** Supabase Auth, JWT tokens, Custom email verification
 - **Payments:** M-Pesa Daraja API
+- **Email:** Gmail SMTP (custom templates)
 - **Deployment:** Vercel
-- **Validation:** Zod
-- **HTTP Client:** Axios
+- **Validation:** Custom validation utilities
+- **HTTP Client:** Fetch API
 - **Data Fetching:** SWR
 
 ## 📋 Current Status
@@ -30,6 +31,7 @@ Safe Hands Escrow is a full-stack web application built with Next.js and Supabas
 ### Phase 1: Foundation & Setup ✅ COMPLETED
 
 All initial setup is complete:
+
 - ✅ Project structure created
 - ✅ Dependencies installed
 - ✅ Database schema designed
@@ -37,7 +39,61 @@ All initial setup is complete:
 - ✅ Environment variables template created
 - ✅ Documentation created
 
-### Next Phase: Authentication & User Management
+### Phase 2: Authentication & User Management ✅ COMPLETED
+
+Full authentication system implemented:
+
+- ✅ User signup with email verification
+- ✅ Login with email verification requirement
+- ✅ Password reset via email
+- ✅ "Remember me" functionality (1 week session)
+- ✅ Role-based access (buyer, seller, buyer_seller, admin)
+- ✅ Rate limiting (production-only)
+- ✅ Custom email templates via Gmail
+- ✅ Email verification flow
+- ✅ RLS policies with security definer functions
+
+### Phase 3: Escrow Core 🔄 IN PROGRESS
+
+- [ ] Transaction creation
+- [ ] M-Pesa payment processing
+- [ ] Delivery confirmation
+- [ ] Auto-release after 3 days
+
+### Phase 4: Disputes 📋 PLANNED
+
+- [ ] Dispute creation
+- [ ] Admin dashboard
+- [ ] Evidence upload
+- [ ] Fair resolution
+
+### Phase 5: UI Components 📋 PLANNED
+
+- [ ] Buyer dashboard
+- [ ] Seller dashboard
+- [ ] Admin dashboard
+- [ ] Transaction cards
+- [ ] Forms and validation
+
+### Phase 6: API Routes 📋 PLANNED
+
+- [ ] All endpoints implemented
+- [ ] Error handling
+- [ ] Rate limiting
+
+### Phase 7: Security ✅ COMPLETED (Core)
+
+- ✅ Input validation
+- ✅ RLS policies (fixed infinite recursion)
+- ✅ Rate limiting
+- [ ] CORS configuration
+- [ ] Monitoring
+
+### Phase 8: Testing & Deployment 📋 PLANNED
+
+- [ ] Comprehensive testing
+- [ ] Vercel deployment
+- [ ] Production setup
 
 ## 📁 Project Structure
 
@@ -47,51 +103,54 @@ safe-hands-escrow/
 │   ├── layout.js                  # Root layout
 │   ├── page.js                    # Homepage
 │   ├── globals.css                # Global styles
-│   ├── (auth)/                    # Auth pages (group)
+│   ├── auth/                      # Auth pages
 │   │   ├── signup/page.js         # Sign up
 │   │   ├── login/page.js          # Login
-│   │   └── layout.js              # Auth layout
-│   ├── (dashboard)/               # Protected routes (group)
+│   │   ├── forgot-password/page.js # Password reset request
+│   │   ├── reset-password/page.js # Password reset form
+│   │   └── verify-email/page.js   # Email verification
+│   ├── dashboard/                 # Protected routes
 │   │   ├── buyer/page.js          # Buyer dashboard
 │   │   ├── seller/page.js         # Seller dashboard
-│   │   └── layout.js              # Dashboard layout
-│   ├── (admin)/                   # Admin routes (group)
-│   │   ├── dashboard/page.js      # Admin dashboard
-│   │   ├── disputes/page.js       # Manage disputes
-│   │   └── layout.js              # Admin layout
+│   │   └── admin/page.js          # Admin dashboard
 │   └── api/                       # API routes
-│       ├── health/route.js        # Health check
-│       ├── auth/[...auth]/        # Auth endpoints
-│       ├── escrow/                # Escrow endpoints
-│       ├── dispute/               # Dispute endpoints
-│       ├── mpesa/                 # M-Pesa endpoints
-│       └── admin/                 # Admin endpoints
+│       ├── auth/                  # Auth endpoints
+│       │   ├── verify-email/      # Email verification
+│       │   ├── forgot-password/   # Password reset request
+│       │   ├── reset-password/    # Password reset
+│       │   ├── resend-verification/ # Resend verification
+│       │   ├── logout/            # Logout
+│       │   └── user/              # Get current user
+│       └── ...
 ├── components/
-│   ├── shared/                    # Reusable components
 │   ├── auth/                      # Auth components
-│   ├── buyer/                     # Buyer components
-│   ├── seller/                    # Seller components
-│   ├── dispute/                   # Dispute components
-│   └── admin/                     # Admin components
+│   │   ├── SignUpForm.js          # Signup form
+│   │   └── LoginForm.js           # Login form
+│   ├── shared/                    # Reusable components
+│   └── ui/                        # Shadcn UI components
 ├── lib/
 │   ├── supabaseClient.js          # Supabase configuration
-│   ├── mpesaClient.js             # M-Pesa API client
+│   ├── emailService.js            # Email sending (Gmail)
+│   ├── tokenService.js            # Token generation/verification
+│   ├── rateLimiter.js             # Rate limiting utility
+│   ├── validation.js              # Form validation
 │   ├── authMiddleware.js          # Auth middleware
 │   └── utils.js                   # Utility functions
 ├── scripts/
 │   ├── 001_create_schema.sql      # Database schema
+│   ├── 002_add_auth_tokens.sql    # Auth token tables
+│   ├── 003_update_users_schema.sql # User schema updates
+│   ├── 004_fix_rls_policies.sql   # RLS policy fixes
 │   └── migrate.js                 # Migration runner
-├── public/
-│   ├── images/                    # Images
-│   └── icons/                     # Icons
 ├── .env.example                   # Environment template
 ├── .env.local                     # Local environment (gitignored)
 ├── package.json
 ├── next.config.mjs
 ├── tsconfig.json
-├── SETUP_GUIDE.md                # Setup instructions
-├── IMPLEMENTATION_CHECKLIST.md   # Development checklist
-└── README.md                      # This file
+├── AUTH_IMPLEMENTATION_COMPLETE.md # Auth documentation
+├── EMAIL_ARCHITECTURE_ANALYSIS.md  # Email system docs
+├── IMPLEMENTATION_SUMMARY.md       # Implementation summary
+└── README.md                       # This file
 ```
 
 ## 🔧 Getting Started
@@ -101,80 +160,97 @@ safe-hands-escrow/
 - Node.js 18+
 - pnpm or npm
 - Supabase account
-- M-Pesa sandbox credentials
+- M-Pesa sandbox credentials (for payment features)
 
 ### Installation
 
-1. **Clone the repository** (or download)
+1. **Clone the repository**
+
    ```bash
    cd safe-hands-escrow
    ```
 
 2. **Install dependencies**
+
    ```bash
    pnpm install
    ```
 
 3. **Create environment file**
+
    ```bash
    cp .env.example .env.local
    ```
 
 4. **Fill in environment variables**
    - Get Supabase credentials from https://supabase.com
+   - Configure Gmail for email sending
    - Get M-Pesa sandbox credentials from https://sandbox.safaricom.co.ke
-   - Edit `.env.local` with your values
 
 5. **Set up database**
-   ```bash
-   # Option A: Run migration script
-   pnpm run migrate
 
-   # Option B: Manual setup via Supabase dashboard
-   # Copy content from scripts/001_create_schema.sql
-   # Paste into Supabase SQL editor
-   # Run the query
+   ```bash
+   # Run migrations
+   node scripts/migrate.js
+
+   # OR manually run SQL scripts in order:
+   # 1. scripts/001_create_schema.sql
+   # 2. scripts/002_add_auth_tokens.sql
+   # 3. scripts/003_update_users_schema.sql
+   # 4. scripts/004_fix_rls_policies.sql
    ```
 
-6. **Start development server**
+6. **Configure Supabase Dashboard**
+   - Go to Authentication → Settings
+   - **Disable** "Enable email confirmations" (we use custom verification)
+   - Save changes
+
+7. **Start development server**
+
    ```bash
    pnpm dev
    ```
 
-7. **Open in browser**
+8. **Open in browser**
    ```
    http://localhost:3000
    ```
 
 ## 📖 Documentation
 
-- **[SETUP_GUIDE.md](./SETUP_GUIDE.md)** - Complete setup instructions
-- **[IMPLEMENTATION_CHECKLIST.md](./IMPLEMENTATION_CHECKLIST.md)** - Feature development roadmap
-- **[project_proposal.md](./docs/project_proposal.md)** - Detailed project requirements
+- **[AUTH_IMPLEMENTATION_COMPLETE.md](./AUTH_IMPLEMENTATION_COMPLETE.md)** - Complete authentication guide
+- **[EMAIL_ARCHITECTURE_ANALYSIS.md](./EMAIL_ARCHITECTURE_ANALYSIS.md)** - Email system architecture
+- **[IMPLEMENTATION_SUMMARY.md](./IMPLEMENTATION_SUMMARY.md)** - Implementation summary
 
-## 🔐 Security
+## 🔐 Security Features
 
 The platform implements several security measures:
 
 - **Authentication:** Supabase Auth with JWT tokens
-- **Session Management:** HTTP-only cookies for token storage
-- **Row Level Security:** Database RLS policies enforce data access
-- **Input Validation:** Zod schema validation on all forms
+- **Email Verification:** Required before login
+- **Session Management:** Configurable session duration (1 week with "remember me")
+- **Row Level Security:** Database RLS policies with security definer functions
+- **Rate Limiting:** Production-only rate limiting for auth endpoints
+- **Input Validation:** Custom validation on all forms
+- **Password Requirements:** 8+ chars, uppercase, lowercase, number, special char
 - **API Protection:** Authentication middleware on protected routes
-- **Admin Functions:** Role-based access control (RBAC)
 
-## 💳 M-Pesa Integration
+## 📧 Email System
 
-The application integrates with Safaricom's M-Pesa Daraja API for payments:
+The platform uses Gmail for sending transactional emails:
 
-### Sandbox (Development)
-- URL: https://sandbox.safaricom.co.ke
-- Default Short Code: 174379
-- Default Passkey: bfb279f9aa9bdbcf158e97dd1a503b91
+- **Verification Emails:** Custom branded templates
+- **Password Reset:** Secure reset links with 24-hour expiration
+- **Welcome Emails:** Sent after email verification
 
-### Production (Live)
-- Requires approval from Safaricom
-- Use production credentials in environment
+### Email Configuration
+
+Required environment variables:
+
+```env
+GMAIL_APP_EMAIL=your_gmail@gmail.com
+GMAIL_APP_PASSWORD=your_app_password
+```
 
 ## 🗄️ Database Schema
 
@@ -186,68 +262,49 @@ The application uses PostgreSQL with the following main tables:
 - **notifications** - User notifications
 - **transaction_history** - Audit trail of status changes
 - **ratings** - User ratings and reviews
+- **email_verification_tokens** - Email verification tokens
+- **password_reset_tokens** - Password reset tokens
 
 See `scripts/001_create_schema.sql` for full schema details.
 
-## 📱 Key Features (In Progress)
+## 🚨 Important Configuration
 
-### Phase 2: Authentication
-- [ ] User signup/login
-- [ ] Profile management
-- [ ] Role selection (buyer/seller)
-- [ ] KYC data management
+### Supabase Dashboard Settings
 
-### Phase 3: Escrow Core
-- [ ] Transaction creation
-- [ ] M-Pesa payment processing
-- [ ] Delivery confirmation
-- [ ] Auto-release after 3 days
+1. **Disable Email Confirmations**
+   - Go to Authentication → Settings
+   - Toggle OFF "Enable email confirmations"
+   - This prevents duplicate verification emails
 
-### Phase 4: Disputes
-- [ ] Dispute creation
-- [ ] Admin dashboard
-- [ ] Evidence upload
-- [ ] Fair resolution
+2. **Email Templates**
+   - We use custom Gmail templates, not Supabase templates
+   - No need to configure Supabase email templates
 
-### Phase 5: UI Components
-- [ ] Buyer dashboard
-- [ ] Seller dashboard
-- [ ] Admin dashboard
-- [ ] Transaction cards
-- [ ] Forms and validation
+### Database Migration Order
 
-### Phase 6: API Routes
-- [ ] All endpoints implemented
-- [ ] Error handling
-- [ ] Rate limiting
+Run SQL scripts in this order:
 
-### Phase 7: Security
-- [ ] Input validation
-- [ ] RLS policies
-- [ ] CORS configuration
-- [ ] Monitoring
-
-### Phase 8: Testing & Deployment
-- [ ] Comprehensive testing
-- [ ] Vercel deployment
-- [ ] Production setup
+1. `001_create_schema.sql` - Creates all tables
+2. `002_add_auth_tokens.sql` - Adds token tables
+3. `003_update_users_schema.sql` - Adds buyer_seller role
+4. `004_fix_rls_policies.sql` - Fixes RLS recursion issue
 
 ## 🧪 Testing
 
 ### Manual Testing Checklist
 
 - [ ] Homepage loads correctly
-- [ ] Navigation works
-- [ ] API health endpoint responds
-- [ ] Database connection established
-- [ ] Environment variables loaded
+- [ ] Can sign up with new email
+- [ ] Receive verification email
+- [ ] Can verify email by clicking link
+- [ ] Can login after verification
+- [ ] "Remember me" extends session
+- [ ] Password reset works
+- [ ] Rate limiting activates in production
 
 ### Testing Commands
 
 ```bash
-# Run type checking
-pnpm type-check
-
 # Lint code
 pnpm lint
 
@@ -264,42 +321,38 @@ pnpm start
 
 1. Push code to GitHub
 2. Connect repository to Vercel
-3. Add environment variables in Vercel project settings:
-   - NEXT_PUBLIC_SUPABASE_URL
-   - NEXT_PUBLIC_SUPABASE_ANON_KEY
-   - SUPABASE_SERVICE_ROLE_KEY
-   - MPESA_CONSUMER_KEY
-   - MPESA_CONSUMER_SECRET
-   - MPESA_CALLBACK_URL
+3. Add environment variables:
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - `SUPABASE_SERVICE_ROLE_KEY`
+   - `GMAIL_APP_EMAIL`
+   - `GMAIL_APP_PASSWORD`
+   - `NEXT_PUBLIC_APP_URL`
 
-4. Deploy button in Vercel dashboard
+4. Deploy
 
 ### Production Checklist
 
+- [ ] Set `NODE_ENV=production`
 - [ ] All environment variables configured
 - [ ] Database backups enabled
-- [ ] M-Pesa production credentials set
+- [ ] Gmail credentials secured
 - [ ] Custom domain configured
 - [ ] SSL certificates installed
 - [ ] Monitoring/logging enabled
-- [ ] Error tracking configured
 
 ## 📞 Support
 
 For issues, questions, or suggestions:
 
-1. Check [SETUP_GUIDE.md](./SETUP_GUIDE.md) for common issues
-2. Review [Supabase documentation](https://supabase.com/docs)
-3. Check [Next.js documentation](https://nextjs.org/docs)
-4. Review [M-Pesa API docs](https://sandbox.safaricom.co.ke/documentation)
+1. Check [AUTH_IMPLEMENTATION_COMPLETE.md](./AUTH_IMPLEMENTATION_COMPLETE.md)
+2. Check [EMAIL_ARCHITECTURE_ANALYSIS.md](./EMAIL_ARCHITECTURE_ANALYSIS.md)
+3. Review [Supabase documentation](https://supabase.com/docs)
+4. Check [Next.js documentation](https://nextjs.org/docs)
 
 ## 📄 License
 
 This project is private and proprietary. All rights reserved.
-
-## 🙋 Contributing
-
-This is a private project. To contribute, contact the project owner.
 
 ---
 
@@ -309,37 +362,32 @@ This is a private project. To contribute, contact the project owner.
 # Development
 pnpm dev              # Start dev server
 pnpm lint             # Lint code
-pnpm type-check       # Check types
 
 # Database
-pnpm run migrate      # Run migrations
+node scripts/migrate.js  # Run migrations
 
 # Production
 pnpm build            # Build for production
 pnpm start            # Start production server
-
-# Cleanup
-pnpm clean            # Remove build files
 ```
 
 ## 🎯 Next Steps
 
-1. **Complete Phase 2:** Build authentication system
-2. **Test locally:** Verify all flows work
-3. **Deploy:** Push to Vercel
-4. **Monitor:** Watch for errors and performance
+1. **Complete Phase 3:** Build escrow transaction system
+2. **Integrate M-Pesa:** Payment processing
+3. **Build Dashboards:** Buyer, seller, admin interfaces
+4. **Deploy:** Push to production
 
 ## 📊 Project Status
 
 - **Started:** 2024
-- **Current Phase:** 1 (Foundation) ✅
-- **Next Phase:** 2 (Authentication)
-- **Timeline:** 18 weeks to completion
+- **Current Phase:** 2 (Authentication) ✅
+- **Next Phase:** 3 (Escrow Core)
 - **Team Size:** Solo development
 
 ---
 
 **Created with ❤️ for secure, transparent, peer-to-peer transactions in Kenya.**
 
-Last Updated: 2024
-Version: 0.1.0 (Alpha)
+Last Updated: 2026-04-28
+Version: 0.2.0 (Beta)

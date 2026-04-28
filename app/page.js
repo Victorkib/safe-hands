@@ -1,9 +1,77 @@
 'use client';
 
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Layout from '@/components/shared/Layout';
+import { supabase } from '@/lib/supabaseClient';
 
 export default function HomePage() {
+  const router = useRouter();
+  const [isLoading, setIsLoading] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [userRole, setUserRole] = useState(null);
+
+  // Check if user is logged in and redirect to dashboard
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        if (session?.user) {
+          setIsAuthenticated(true);
+
+          // Get user role from metadata
+          const role = session.user.user_metadata?.role || 'buyer';
+          setUserRole(role);
+
+          // Redirect to appropriate dashboard
+          const dashboardPath =
+            role === 'buyer_seller' ? '/dashboard/buyer' : `/dashboard/${role}`;
+          router.push(dashboardPath);
+        } else {
+          setIsAuthenticated(false);
+        }
+      } catch (error) {
+        console.error('Auth check error:', error);
+        setIsAuthenticated(false);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    checkAuth();
+  }, [router]);
+
+  // Show loading while checking auth
+  if (isLoading) {
+    return (
+      <Layout>
+        <div className="flex items-center justify-center min-h-screen">
+          <div className="text-center">
+            <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-gray-600">Loading...</p>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
+
+  // If user is authenticated, don't render the page (they'll be redirected)
+  if (isAuthenticated) {
+    return (
+      <Layout>
+        <div className="flex items-center justify-center min-h-screen">
+          <div className="text-center">
+            <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-gray-600">Redirecting to dashboard...</p>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
   return (
     <Layout>
       {/* Hero Section */}
@@ -13,7 +81,9 @@ export default function HomePage() {
             Secure P2P Escrow Made Simple
           </h1>
           <p className="text-xl text-gray-600 mb-8">
-            Safe Hands Escrow provides a trusted platform for buyer and seller protection in Kenya. Transact with confidence using our secure escrow service integrated with M-Pesa.
+            Safe Hands Escrow provides a trusted platform for buyer and seller
+            protection in Kenya. Transact with confidence using our secure
+            escrow service integrated with M-Pesa.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link
@@ -45,9 +115,12 @@ export default function HomePage() {
               <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center text-2xl mb-4">
                 🔒
               </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-3">Secure Protection</h3>
+              <h3 className="text-xl font-bold text-gray-900 mb-3">
+                Secure Protection
+              </h3>
               <p className="text-gray-600">
-                Your funds are held securely in escrow until both parties confirm transaction completion. No disputes, no lost money.
+                Your funds are held securely in escrow until both parties
+                confirm transaction completion. No disputes, no lost money.
               </p>
             </div>
 
@@ -56,9 +129,12 @@ export default function HomePage() {
               <div className="w-12 h-12 bg-green-100 text-green-600 rounded-lg flex items-center justify-center text-2xl mb-4">
                 💰
               </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-3">M-Pesa Integrated</h3>
+              <h3 className="text-xl font-bold text-gray-900 mb-3">
+                M-Pesa Integrated
+              </h3>
               <p className="text-gray-600">
-                Direct integration with M-Pesa Daraja API. Send and receive money instantly with Kenya&apos;s most trusted payment system.
+                Direct integration with M-Pesa Daraja API. Send and receive
+                money instantly with Kenya&apos;s most trusted payment system.
               </p>
             </div>
 
@@ -67,9 +143,12 @@ export default function HomePage() {
               <div className="w-12 h-12 bg-purple-100 text-purple-600 rounded-lg flex items-center justify-center text-2xl mb-4">
                 ⚖️
               </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-3">Fair Dispute Resolution</h3>
+              <h3 className="text-xl font-bold text-gray-900 mb-3">
+                Fair Dispute Resolution
+              </h3>
               <p className="text-gray-600">
-                Expert admins review disputes fairly. Our transparent process ensures both buyers and sellers are treated equally.
+                Expert admins review disputes fairly. Our transparent process
+                ensures both buyers and sellers are treated equally.
               </p>
             </div>
 
@@ -78,9 +157,12 @@ export default function HomePage() {
               <div className="w-12 h-12 bg-red-100 text-red-600 rounded-lg flex items-center justify-center text-2xl mb-4">
                 ✓
               </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-3">Verified Users</h3>
+              <h3 className="text-xl font-bold text-gray-900 mb-3">
+                Verified Users
+              </h3>
               <p className="text-gray-600">
-                KYC verification ensures only legitimate traders use the platform. Build trust through our user rating system.
+                KYC verification ensures only legitimate traders use the
+                platform. Build trust through our user rating system.
               </p>
             </div>
 
@@ -89,9 +171,12 @@ export default function HomePage() {
               <div className="w-12 h-12 bg-yellow-100 text-yellow-600 rounded-lg flex items-center justify-center text-2xl mb-4">
                 📱
               </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-3">Easy to Use</h3>
+              <h3 className="text-xl font-bold text-gray-900 mb-3">
+                Easy to Use
+              </h3>
               <p className="text-gray-600">
-                Simple, intuitive interface. Create a transaction in minutes. Track everything in real-time from your dashboard.
+                Simple, intuitive interface. Create a transaction in minutes.
+                Track everything in real-time from your dashboard.
               </p>
             </div>
 
@@ -100,9 +185,12 @@ export default function HomePage() {
               <div className="w-12 h-12 bg-teal-100 text-teal-600 rounded-lg flex items-center justify-center text-2xl mb-4">
                 🌍
               </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-3">Kenya-Focused</h3>
+              <h3 className="text-xl font-bold text-gray-900 mb-3">
+                Kenya-Focused
+              </h3>
               <p className="text-gray-600">
-                Built for Kenyan traders. Supports KES currency, local phone numbers, and Safaricom M-Pesa exclusively.
+                Built for Kenyan traders. Supports KES currency, local phone
+                numbers, and Safaricom M-Pesa exclusively.
               </p>
             </div>
           </div>
@@ -125,9 +213,12 @@ export default function HomePage() {
                 </div>
               </div>
               <div>
-                <h3 className="text-xl font-bold text-gray-900">Create Account</h3>
+                <h3 className="text-xl font-bold text-gray-900">
+                  Create Account
+                </h3>
                 <p className="text-gray-600 mt-2">
-                  Sign up as a buyer or seller. Verify your email and phone number to start trading securely.
+                  Sign up as a buyer or seller. Verify your email and phone
+                  number to start trading securely.
                 </p>
               </div>
             </div>
@@ -140,9 +231,12 @@ export default function HomePage() {
                 </div>
               </div>
               <div>
-                <h3 className="text-xl font-bold text-gray-900">Create Transaction</h3>
+                <h3 className="text-xl font-bold text-gray-900">
+                  Create Transaction
+                </h3>
                 <p className="text-gray-600 mt-2">
-                  Buyers create a transaction with seller details and amount. Review the terms before proceeding.
+                  Buyers create a transaction with seller details and amount.
+                  Review the terms before proceeding.
                 </p>
               </div>
             </div>
@@ -155,9 +249,12 @@ export default function HomePage() {
                 </div>
               </div>
               <div>
-                <h3 className="text-xl font-bold text-gray-900">Make Payment</h3>
+                <h3 className="text-xl font-bold text-gray-900">
+                  Make Payment
+                </h3>
                 <p className="text-gray-600 mt-2">
-                  Pay via M-Pesa. Funds go into escrow - not directly to the seller. Transaction is now protected.
+                  Pay via M-Pesa. Funds go into escrow - not directly to the
+                  seller. Transaction is now protected.
                 </p>
               </div>
             </div>
@@ -170,9 +267,12 @@ export default function HomePage() {
                 </div>
               </div>
               <div>
-                <h3 className="text-xl font-bold text-gray-900">Confirm Delivery</h3>
+                <h3 className="text-xl font-bold text-gray-900">
+                  Confirm Delivery
+                </h3>
                 <p className="text-gray-600 mt-2">
-                  Buyer receives goods and confirms delivery. Seller is notified and can prepare for payout.
+                  Buyer receives goods and confirms delivery. Seller is notified
+                  and can prepare for payout.
                 </p>
               </div>
             </div>
@@ -185,9 +285,12 @@ export default function HomePage() {
                 </div>
               </div>
               <div>
-                <h3 className="text-xl font-bold text-gray-900">Release Funds</h3>
+                <h3 className="text-xl font-bold text-gray-900">
+                  Release Funds
+                </h3>
                 <p className="text-gray-600 mt-2">
-                  Funds are released from escrow to seller&apos;s M-Pesa account. Transaction complete!
+                  Funds are released from escrow to seller&apos;s M-Pesa
+                  account. Transaction complete!
                 </p>
               </div>
             </div>
@@ -230,50 +333,67 @@ export default function HomePage() {
             <details className="bg-white p-6 rounded-lg shadow cursor-pointer group">
               <summary className="font-bold text-gray-900 flex justify-between items-center">
                 Is Safe Hands Escrow safe?
-                <span className="text-2xl group-open:rotate-180 transition">+</span>
+                <span className="text-2xl group-open:rotate-180 transition">
+                  +
+                </span>
               </summary>
               <p className="text-gray-600 mt-4">
-                Yes! Your funds are held in escrow until both parties confirm the transaction. We use bank-grade security and integrate directly with M-Pesa.
+                Yes! Your funds are held in escrow until both parties confirm
+                the transaction. We use bank-grade security and integrate
+                directly with M-Pesa.
               </p>
             </details>
 
             <details className="bg-white p-6 rounded-lg shadow cursor-pointer group">
               <summary className="font-bold text-gray-900 flex justify-between items-center">
                 What are the transaction fees?
-                <span className="text-2xl group-open:rotate-180 transition">+</span>
+                <span className="text-2xl group-open:rotate-180 transition">
+                  +
+                </span>
               </summary>
               <p className="text-gray-600 mt-4">
-                We charge a small percentage per transaction (details coming soon). M-Pesa charges are as per their standard rates.
+                We charge a small percentage per transaction (details coming
+                soon). M-Pesa charges are as per their standard rates.
               </p>
             </details>
 
             <details className="bg-white p-6 rounded-lg shadow cursor-pointer group">
               <summary className="font-bold text-gray-900 flex justify-between items-center">
                 What if there&apos;s a dispute?
-                <span className="text-2xl group-open:rotate-180 transition">+</span>
+                <span className="text-2xl group-open:rotate-180 transition">
+                  +
+                </span>
               </summary>
               <p className="text-gray-600 mt-4">
-                Either party can raise a dispute with evidence. Our admin team reviews fairly and makes a resolution. Funds are released accordingly.
+                Either party can raise a dispute with evidence. Our admin team
+                reviews fairly and makes a resolution. Funds are released
+                accordingly.
               </p>
             </details>
 
             <details className="bg-white p-6 rounded-lg shadow cursor-pointer group">
               <summary className="font-bold text-gray-900 flex justify-between items-center">
                 How long does a transaction take?
-                <span className="text-2xl group-open:rotate-180 transition">+</span>
+                <span className="text-2xl group-open:rotate-180 transition">
+                  +
+                </span>
               </summary>
               <p className="text-gray-600 mt-4">
-                Typically 1-3 days. Funds are released to the seller after the buyer confirms delivery. Instant if both parties agree.
+                Typically 1-3 days. Funds are released to the seller after the
+                buyer confirms delivery. Instant if both parties agree.
               </p>
             </details>
 
             <details className="bg-white p-6 rounded-lg shadow cursor-pointer group">
               <summary className="font-bold text-gray-900 flex justify-between items-center">
                 Do I need KYC verification?
-                <span className="text-2xl group-open:rotate-180 transition">+</span>
+                <span className="text-2xl group-open:rotate-180 transition">
+                  +
+                </span>
               </summary>
               <p className="text-gray-600 mt-4">
-                Yes, basic KYC is required. Provide your email, phone number, and full name. This protects all users on the platform.
+                Yes, basic KYC is required. Provide your email, phone number,
+                and full name. This protects all users on the platform.
               </p>
             </details>
           </div>

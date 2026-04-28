@@ -3,10 +3,8 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { supabase } from '@/lib/supabaseClient.js';
 import { validateSignupForm, normalizePhone } from '@/lib/validation.js';
-import { sendVerificationEmail } from '@/lib/emailService.js';
-import { createEmailVerificationToken } from '@/lib/tokenService.js';
+import { signupUser } from '@/app/actions/auth.js';
 
 export default function SignUpForm() {
   const router = useRouter();
@@ -55,30 +53,6 @@ export default function SignUpForm() {
     }
   };
 
-  const sendVerification = async (userId, email, name) => {
-    try {
-      console.log('[v0] Creating verification token');
-      const { token } = await createEmailVerificationToken(userId, 24);
-
-      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-      const verificationLink = `${baseUrl}/auth/verify-email?token=${token}`;
-
-      console.log('[v0] Sending verification email');
-      const emailResult = await sendVerificationEmail(name, email, verificationLink);
-
-      if (!emailResult.success) {
-        console.error('[v0] Email send failed:', emailResult.error);
-        throw new Error('Failed to send verification email');
-      }
-
-      console.log('[v0] Verification email sent successfully');
-      return true;
-    } catch (error) {
-      console.error('[v0] Error sending verification:', error.message);
-      throw error;
-    }
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     setErrors({});
@@ -97,88 +71,49 @@ export default function SignUpForm() {
 
       console.log('[v0] Starting signup process');
 
-      // Sign up with Supabase Auth
-      const { data: authData, error: signUpError } = await supabase.auth.signUp({
+      const result = await signupUser({
         email: formData.email,
+        name: formData.name,
+        phone: normalizedPhone,
         password: formData.password,
-        options: {
-          data: {
-            full_name: formData.name,
-            phone: normalizedPhone,
-            role: formData.role,
-          },
-        },
+        role: formData.role,
       });
 
-      if (signUpError) {
-        if (signUpError.message.includes('already registered')) {
+      if (!result.success) {
+        if (result.error.includes('already registered')) {
           setErrors({
             email: 'This email is already registered. Please login instead.',
           });
         } else {
-          setErrors({ form: signUpError.message });
+          setErrors({ form: result.error });
         }
         setLoading(false);
         return;
       }
 
-      if (!authData.user) {
-        setErrors({ form: 'Failed to create account' });
-        setLoading(false);
-        return;
-      }
+      console.log('[v0] Signup successful');
 
-      console.log('[v0] Auth user created:', authData.user.id);
+      // Show verification modal
+      setSignupEmail(result.email);
+      setSignupName(result.name);
+      setShowVerificationModal(true);
 
-      // Create user profile in database
-      const { error: profileError } = await supabase.from('users').insert({
-        id: authData.user.id,
-        email: formData.email,
-        full_name: formData.name,
-        phone_number: normalizedPhone,
-        role: formData.role,
-        kyc_status: 'pending',
-        is_active: true,
-        account_balance: 0.0,
-        total_transactions_completed: 0,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+      // Reset form
+      setFormData({
+        email: '',
+        name: '',
+        phone: '',
+        password: '',
+        confirmPassword: '',
+        role: 'buyer',
       });
+      setPasswordStrength(0);
 
-      if (profileError) {
-        console.error('[v0] Profile creation error:', profileError);
-        setErrors({ form: 'Account created but profile setup failed. Please contact support.' });
-        setLoading(false);
-        return;
-      }
-
-      console.log('[v0] User profile created');
-
-      // Send verification email
-      try {
-        await sendVerification(authData.user.id, formData.email, formData.name);
-        
-        // Show verification modal
-        setSignupEmail(formData.email);
-        setSignupName(formData.name);
-        setShowVerificationModal(true);
-
-        // Reset form
-        setFormData({
-          email: '',
-          name: '',
-          phone: '',
-          password: '',
-          confirmPassword: '',
-          role: 'buyer',
-        });
-        setPasswordStrength(0);
-      } catch (emailError) {
-        console.warn('[v0] Verification email failed, but account created:', emailError.message);
-        // Don't completely fail - show modal but with warning
-        setSignupEmail(formData.email);
-        setSignupName(formData.name);
-        setShowVerificationModal(true);
+      if (!result.emailSent && result.emailError) {
+        console.warn(
+          '[v0] Verification email failed, but account created:',
+          result.emailError,
+        );
       }
     } catch (error) {
       console.error('[v0] Signup error:', error);
@@ -191,7 +126,7 @@ export default function SignUpForm() {
   const handleResendEmail = async () => {
     try {
       setResendLoading(true);
-      
+
       const response = await fetch('/api/auth/resend-verification', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -239,8 +174,12 @@ export default function SignUpForm() {
             <div className="w-12 h-12 bg-green-600 text-white rounded-full flex items-center justify-center font-bold mx-auto mb-4">
               ✉️
             </div>
-            <h1 className="text-3xl font-bold text-gray-900">Check Your Email</h1>
-            <p className="text-gray-600 mt-2">We&apos;ve sent a verification link</p>
+            <h1 className="text-3xl font-bold text-gray-900">
+              Check Your Email
+            </h1>
+            <p className="text-gray-600 mt-2">
+              We&apos;ve sent a verification link
+            </p>
           </div>
 
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-6">
@@ -250,7 +189,8 @@ export default function SignUpForm() {
             <p className="font-medium text-blue-600 mb-6">{signupEmail}</p>
 
             <p className="text-gray-600 text-sm mb-4">
-              Click the link in the email to verify your account. The link expires in 24 hours.
+              Click the link in the email to verify your account. The link
+              expires in 24 hours.
             </p>
 
             <button
@@ -271,7 +211,8 @@ export default function SignUpForm() {
 
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
             <p className="text-yellow-800 text-xs">
-              <strong>Tip:</strong> Check your spam folder if you don&apos;t see the email in 2 minutes.
+              <strong>Tip:</strong> Check your spam folder if you don&apos;t see
+              the email in 2 minutes.
             </p>
           </div>
 
@@ -307,7 +248,11 @@ export default function SignUpForm() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form
+          onSubmit={handleSubmit}
+          className="space-y-4"
+          suppressHydrationWarning
+        >
           {/* Full Name */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -387,7 +332,7 @@ export default function SignUpForm() {
             >
               <option value="buyer">Buyer</option>
               <option value="seller">Seller</option>
-              <option value="both">Both Buyer & Seller</option>
+              <option value="buyer_seller">Both Buyer & Seller</option>
             </select>
             {errors.role && (
               <p className="text-red-500 text-xs mt-1">{errors.role}</p>
@@ -413,7 +358,9 @@ export default function SignUpForm() {
             {formData.password && (
               <div className="mt-2">
                 <div className="flex justify-between items-center mb-1">
-                  <span className="text-xs text-gray-600">Password strength:</span>
+                  <span className="text-xs text-gray-600">
+                    Password strength:
+                  </span>
                   <span className="text-xs font-medium text-gray-700">
                     {getPasswordStrengthText()}
                   </span>
@@ -448,7 +395,9 @@ export default function SignUpForm() {
               disabled={loading}
             />
             {errors.confirmPassword && (
-              <p className="text-red-500 text-xs mt-1">{errors.confirmPassword}</p>
+              <p className="text-red-500 text-xs mt-1">
+                {errors.confirmPassword}
+              </p>
             )}
           </div>
 

@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
   email VARCHAR(255) UNIQUE NOT NULL,
   phone_number VARCHAR(20) UNIQUE,
   full_name VARCHAR(255) NOT NULL,
-  role VARCHAR(50) NOT NULL CHECK (role IN ('buyer', 'seller', 'admin')), -- buyer, seller, admin
+  role VARCHAR(50) NOT NULL DEFAULT 'buyer' CHECK (role IN ('buyer', 'seller', 'admin', 'buyer_seller')), -- buyer, seller, admin, or both buyer_seller
   kyc_status VARCHAR(50) NOT NULL DEFAULT 'pending' CHECK (kyc_status IN ('pending', 'approved', 'rejected')),
   kyc_data JSONB, -- Store ID type, ID number, address, etc.
   profile_picture_url TEXT,
@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS users (
   account_balance DECIMAL(15, 2) DEFAULT 0.00, -- For future use: wallet balance
   total_transactions_completed INT DEFAULT 0,
   avg_rating DECIMAL(3, 2),
+  email_verified_at TIMESTAMP WITH TIME ZONE, -- Track when email was verified
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   last_login TIMESTAMP WITH TIME ZONE
@@ -200,22 +201,34 @@ ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE transaction_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ratings ENABLE ROW LEVEL SECURITY;
 
+-- Users can view their own profile OR if they are admin (using auth.uid() directly to avoid recursion)
+-- Note: We use a security definer function to check admin status safely
+CREATE OR REPLACE FUNCTION is_admin() RETURNS boolean AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1 FROM users 
+    WHERE id = auth.uid() AND role = 'admin'
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
 -- Users can view their own profile
 CREATE POLICY "Users can view their own profile" ON users
-  FOR SELECT USING (auth.uid()::text = id::text);
-
--- Users can update their own profile
-CREATE POLICY "Users can update their own profile" ON users
-  FOR UPDATE USING (auth.uid()::text = id::text);
-
--- Admins can view all users
-CREATE POLICY "Admins can view all users" ON users
   FOR SELECT USING (
-    EXISTS (
-      SELECT 1 FROM users u 
-      WHERE u.id = auth.uid()::uuid AND u.role = 'admin'
-    )
+    id = auth.uid() OR 
+    is_admin()
   );
+
+-- Users can update their own profile (admins can also update any profile)
+CREATE POLICY "Users can update their own profile" ON users
+  FOR UPDATE USING (
+    id = auth.uid() OR 
+    is_admin()
+  );
+
+-- Allow insert for new user registration (used by supabaseAdmin)
+CREATE POLICY "Enable insert for authenticated users" ON users
+  FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
 
 -- Users can view transactions they are involved in
 CREATE POLICY "Users can view their transactions" ON transactions
