@@ -3,15 +3,20 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { supabase } from '@/lib/supabaseClient';
-import { validateSignupForm, normalizePhone } from '@/lib/validation';
+import { supabase } from '@/lib/supabaseClient.js';
+import { validateSignupForm, normalizePhone } from '@/lib/validation.js';
+import { sendVerificationEmail } from '@/lib/emailService.js';
+import { createEmailVerificationToken } from '@/lib/tokenService.js';
 
 export default function SignUpForm() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
-  const [successMessage, setSuccessMessage] = useState('');
   const [passwordStrength, setPasswordStrength] = useState(0);
+  const [showVerificationModal, setShowVerificationModal] = useState(false);
+  const [signupEmail, setSignupEmail] = useState('');
+  const [signupName, setSignupName] = useState('');
+  const [resendLoading, setResendLoading] = useState(false);
 
   const [formData, setFormData] = useState({
     email: '',
@@ -22,7 +27,6 @@ export default function SignUpForm() {
     role: 'buyer',
   });
 
-  // Handle password strength indicator
   const updatePasswordStrength = (password) => {
     let strength = 0;
     if (password.length >= 8) strength += 25;
@@ -43,7 +47,6 @@ export default function SignUpForm() {
       updatePasswordStrength(value);
     }
 
-    // Clear error for this field
     if (errors[name]) {
       setErrors((prev) => ({
         ...prev,
@@ -52,10 +55,33 @@ export default function SignUpForm() {
     }
   };
 
+  const sendVerification = async (userId, email, name) => {
+    try {
+      console.log('[v0] Creating verification token');
+      const { token } = await createEmailVerificationToken(userId, 24);
+
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+      const verificationLink = `${baseUrl}/auth/verify-email?token=${token}`;
+
+      console.log('[v0] Sending verification email');
+      const emailResult = await sendVerificationEmail(name, email, verificationLink);
+
+      if (!emailResult.success) {
+        console.error('[v0] Email send failed:', emailResult.error);
+        throw new Error('Failed to send verification email');
+      }
+
+      console.log('[v0] Verification email sent successfully');
+      return true;
+    } catch (error) {
+      console.error('[v0] Error sending verification:', error.message);
+      throw error;
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setErrors({});
-    setSuccessMessage('');
 
     // Validate form
     const validationErrors = validateSignupForm(formData);
@@ -67,23 +93,22 @@ export default function SignUpForm() {
     setLoading(true);
 
     try {
-      // Normalize phone number
       const normalizedPhone = normalizePhone(formData.phone);
 
+      console.log('[v0] Starting signup process');
+
       // Sign up with Supabase Auth
-      const { data: authData, error: signUpError } = await supabase.auth.signUp(
-        {
-          email: formData.email,
-          password: formData.password,
-          options: {
-            data: {
-              full_name: formData.name,
-              phone: normalizedPhone,
-              role: formData.role,
-            },
+      const { data: authData, error: signUpError } = await supabase.auth.signUp({
+        email: formData.email,
+        password: formData.password,
+        options: {
+          data: {
+            full_name: formData.name,
+            phone: normalizedPhone,
+            role: formData.role,
           },
         },
-      );
+      });
 
       if (signUpError) {
         if (signUpError.message.includes('already registered')) {
@@ -93,43 +118,104 @@ export default function SignUpForm() {
         } else {
           setErrors({ form: signUpError.message });
         }
+        setLoading(false);
         return;
       }
 
-      // Create user profile in our database
-      if (authData.user) {
-        const { error: profileError } = await supabase.from('users').insert({
-          id: authData.user.id,
-          email: formData.email,
-          full_name: formData.name,
-          phone_number: normalizedPhone,
-          role: formData.role,
-          kyc_status: 'pending',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        });
-
-        if (profileError) {
-          console.error('Profile creation error:', profileError);
-          // Note: User auth was successful, profile creation failed
-          // In production, this might need cleanup
-        }
+      if (!authData.user) {
+        setErrors({ form: 'Failed to create account' });
+        setLoading(false);
+        return;
       }
 
-      setSuccessMessage(
-        'Account created successfully! Redirecting to login...',
-      );
+      console.log('[v0] Auth user created:', authData.user.id);
 
-      // Redirect after 2 seconds
-      setTimeout(() => {
-        router.push('/auth/login?email=' + encodeURIComponent(formData.email));
-      }, 2000);
+      // Create user profile in database
+      const { error: profileError } = await supabase.from('users').insert({
+        id: authData.user.id,
+        email: formData.email,
+        full_name: formData.name,
+        phone_number: normalizedPhone,
+        role: formData.role,
+        kyc_status: 'pending',
+        is_active: true,
+        account_balance: 0.0,
+        total_transactions_completed: 0,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+
+      if (profileError) {
+        console.error('[v0] Profile creation error:', profileError);
+        setErrors({ form: 'Account created but profile setup failed. Please contact support.' });
+        setLoading(false);
+        return;
+      }
+
+      console.log('[v0] User profile created');
+
+      // Send verification email
+      try {
+        await sendVerification(authData.user.id, formData.email, formData.name);
+        
+        // Show verification modal
+        setSignupEmail(formData.email);
+        setSignupName(formData.name);
+        setShowVerificationModal(true);
+
+        // Reset form
+        setFormData({
+          email: '',
+          name: '',
+          phone: '',
+          password: '',
+          confirmPassword: '',
+          role: 'buyer',
+        });
+        setPasswordStrength(0);
+      } catch (emailError) {
+        console.warn('[v0] Verification email failed, but account created:', emailError.message);
+        // Don't completely fail - show modal but with warning
+        setSignupEmail(formData.email);
+        setSignupName(formData.name);
+        setShowVerificationModal(true);
+      }
     } catch (error) {
-      console.error('Signup error:', error);
+      console.error('[v0] Signup error:', error);
       setErrors({ form: 'An unexpected error occurred. Please try again.' });
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleResendEmail = async () => {
+    try {
+      setResendLoading(true);
+      
+      const response = await fetch('/api/auth/resend-verification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: signupEmail }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setErrors({ form: data.error || 'Failed to resend email' });
+        return;
+      }
+
+      alert('Verification email resent! Check your inbox.');
+    } catch (error) {
+      console.error('[v0] Resend error:', error);
+      setErrors({ form: 'Failed to resend verification email' });
+    } finally {
+      setResendLoading(false);
+    }
+  };
+
+  const handleGoToVerify = () => {
+    router.push('/auth/verify-email');
   };
 
   const getPasswordStrengthColor = () => {
@@ -144,10 +230,68 @@ export default function SignUpForm() {
     return 'Strong';
   };
 
+  // Verification Modal
+  if (showVerificationModal) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center py-12 px-4">
+        <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8">
+          <div className="text-center mb-8">
+            <div className="w-12 h-12 bg-green-600 text-white rounded-full flex items-center justify-center font-bold mx-auto mb-4">
+              ✉️
+            </div>
+            <h1 className="text-3xl font-bold text-gray-900">Check Your Email</h1>
+            <p className="text-gray-600 mt-2">We&apos;ve sent a verification link</p>
+          </div>
+
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-6">
+            <p className="text-gray-700 mb-4">
+              A verification email has been sent to:
+            </p>
+            <p className="font-medium text-blue-600 mb-6">{signupEmail}</p>
+
+            <p className="text-gray-600 text-sm mb-4">
+              Click the link in the email to verify your account. The link expires in 24 hours.
+            </p>
+
+            <button
+              onClick={handleGoToVerify}
+              className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition font-medium mb-3"
+            >
+              I Verified My Email
+            </button>
+
+            <button
+              onClick={handleResendEmail}
+              disabled={resendLoading}
+              className="w-full bg-gray-200 text-gray-800 py-2 rounded-lg hover:bg-gray-300 transition disabled:bg-gray-400 disabled:cursor-not-allowed font-medium"
+            >
+              {resendLoading ? 'Sending...' : 'Resend Email'}
+            </button>
+          </div>
+
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+            <p className="text-yellow-800 text-xs">
+              <strong>Tip:</strong> Check your spam folder if you don&apos;t see the email in 2 minutes.
+            </p>
+          </div>
+
+          <p className="text-center text-gray-600 text-sm">
+            <Link
+              href="/auth/login"
+              className="text-blue-600 hover:text-blue-700 font-medium"
+            >
+              Back to Login
+            </Link>
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Signup Form
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center py-12 px-4">
       <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8">
-        {/* Header */}
         <div className="text-center mb-8">
           <div className="w-12 h-12 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold mx-auto mb-4">
             S
@@ -155,13 +299,6 @@ export default function SignUpForm() {
           <h1 className="text-3xl font-bold text-gray-900">Create Account</h1>
           <p className="text-gray-600 mt-2">Join Safe Hands Escrow today</p>
         </div>
-
-        {/* Success Message */}
-        {successMessage && (
-          <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
-            <p className="text-green-800 text-sm">{successMessage}</p>
-          </div>
-        )}
 
         {/* Form Errors */}
         {errors.form && (
@@ -276,9 +413,7 @@ export default function SignUpForm() {
             {formData.password && (
               <div className="mt-2">
                 <div className="flex justify-between items-center mb-1">
-                  <span className="text-xs text-gray-600">
-                    Password strength:
-                  </span>
+                  <span className="text-xs text-gray-600">Password strength:</span>
                   <span className="text-xs font-medium text-gray-700">
                     {getPasswordStrengthText()}
                   </span>
@@ -313,9 +448,7 @@ export default function SignUpForm() {
               disabled={loading}
             />
             {errors.confirmPassword && (
-              <p className="text-red-500 text-xs mt-1">
-                {errors.confirmPassword}
-              </p>
+              <p className="text-red-500 text-xs mt-1">{errors.confirmPassword}</p>
             )}
           </div>
 
