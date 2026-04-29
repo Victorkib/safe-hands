@@ -4,9 +4,11 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
+import { useAuth } from '@/context/AuthContext';
 
 export default function AdminDashboard() {
   const router = useRouter();
+  const { profile, loading: authLoading } = useAuth();
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
@@ -24,41 +26,19 @@ export default function AdminDashboard() {
   const [listings, setListings] = useState([]);
 
   useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const { data: { user: authUser } } = await supabase.auth.getUser();
-        if (!authUser) {
-          router.push('/auth/login');
-          return;
-        }
-
-        // Check if admin
-        const { data: userData } = await supabase
-          .from('users')
-          .select('role')
-          .eq('id', authUser.id)
-          .single();
-
-        if (userData?.role !== 'admin') {
-          router.push('/dashboard');
-          return;
-        }
-
-        setUser(authUser);
+    if (!authLoading) {
+      if (profile?.role !== 'admin') {
+        router.push('/dashboard');
+      } else {
         fetchStats();
         fetchUsers();
         fetchTransactions();
         fetchDisputes();
         fetchListings();
-      } catch (error) {
-        console.error('Error:', error);
-        router.push('/dashboard');
-      } finally {
         setLoading(false);
       }
-    };
-    checkAuth();
-  }, [router]);
+    }
+  }, [profile, authLoading, router]);
 
   const fetchStats = async () => {
     const { count: totalUsers } = await supabase.from('users').select('*', { count: 'exact', head: true });
@@ -156,61 +136,73 @@ export default function AdminDashboard() {
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-5">
-        <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6 hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between">
+        <Link href="/dashboard/admin/users" className="bg-white border border-gray-200 rounded-xl shadow-sm p-6 hover:shadow-lg transition-all hover:border-blue-300 group cursor-pointer">
+          <div className="flex items-center justify-between mb-4">
             <div>
               <p className="text-sm font-medium text-gray-600">Total Users</p>
               <p className="text-3xl font-bold text-blue-600 mt-2">{stats.totalUsers}</p>
             </div>
-            <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+            <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center group-hover:bg-blue-200 transition">
               <svg className="w-6 h-6 text-blue-600" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
               </svg>
             </div>
           </div>
-        </div>
+          <button className="w-full px-3 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition font-medium text-xs">
+            Manage Users
+          </button>
+        </Link>
 
-        <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6 hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between">
+        <Link href="/dashboard/admin/transactions" className="bg-white border border-gray-200 rounded-xl shadow-sm p-6 hover:shadow-lg transition-all hover:border-green-300 group cursor-pointer">
+          <div className="flex items-center justify-between mb-4">
             <div>
               <p className="text-sm font-medium text-gray-600">Transactions</p>
               <p className="text-3xl font-bold text-green-600 mt-2">{stats.totalTransactions}</p>
             </div>
-            <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
+            <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center group-hover:bg-green-200 transition">
               <svg className="w-6 h-6 text-green-600" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z" />
               </svg>
             </div>
           </div>
-        </div>
+          <button className="w-full px-3 py-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition font-medium text-xs">
+            Manage Transactions
+          </button>
+        </Link>
 
-        <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6 hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between">
+        <Link href="/dashboard/admin/listings" className="bg-white border border-gray-200 rounded-xl shadow-sm p-6 hover:shadow-lg transition-all hover:border-purple-300 group cursor-pointer">
+          <div className="flex items-center justify-between mb-4">
             <div>
               <p className="text-sm font-medium text-gray-600">Listings</p>
               <p className="text-3xl font-bold text-purple-600 mt-2">{stats.totalListings}</p>
             </div>
-            <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
+            <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center group-hover:bg-purple-200 transition">
               <svg className="w-6 h-6 text-purple-600" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 9.5c0 1.38-1.12 2.5-2.5 2.5S9 13.88 9 12.5 10.12 10 11.5 10 14 11.12 14 12.5zm3 6.5H5v-3.5c0-1.66 2.69-2.5 4-2.5s4 .84 4 2.5V19z" />
               </svg>
             </div>
           </div>
-        </div>
+          <button className="w-full px-3 py-2 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 transition font-medium text-xs">
+            Moderate Listings
+          </button>
+        </Link>
 
-        <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6 hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between">
+        <Link href="/dashboard/admin/disputes" className="bg-white border border-gray-200 rounded-xl shadow-sm p-6 hover:shadow-lg transition-all hover:border-red-300 group cursor-pointer">
+          <div className="flex items-center justify-between mb-4">
             <div>
               <p className="text-sm font-medium text-gray-600">Disputes</p>
               <p className="text-3xl font-bold text-red-600 mt-2">{stats.totalDisputes}</p>
             </div>
-            <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
+            <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center group-hover:bg-red-200 transition">
               <svg className="w-6 h-6 text-red-600" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z" />
               </svg>
             </div>
           </div>
-        </div>
+          <button className="w-full px-3 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition font-medium text-xs">
+            Manage Disputes
+          </button>
+        </Link>
 
         <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6 hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between">

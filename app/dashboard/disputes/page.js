@@ -4,32 +4,27 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
+import { useAuth } from '@/context/AuthContext';
 
 export default function DisputesPage() {
   const router = useRouter();
-  const [user, setUser] = useState(null);
+  const { user, profile, loading: authLoading } = useAuth();
   const [disputes, setDisputes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
+  const isAdmin = profile?.role === 'admin';
 
   useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const { data: { user: authUser } } = await supabase.auth.getUser();
-        if (!authUser) {
-          router.push('/auth/login');
-          return;
-        }
-        setUser(authUser);
-        fetchDisputes(authUser.id);
-      } catch (error) {
-        console.error('Error:', error);
-      } finally {
-        setLoading(false);
+    if (!authLoading && user) {
+      if (isAdmin) {
+        // Admins see all disputes - go to admin disputes page
+        router.push('/dashboard/admin/disputes');
+      } else {
+        // Users see their own disputes
+        fetchDisputes(user.id);
       }
-    };
-    checkAuth();
-  }, [router]);
+    }
+  }, [user, authLoading, isAdmin, router]);
 
   const fetchDisputes = async (userId) => {
     const { data: { session } } = await supabase.auth.getSession();

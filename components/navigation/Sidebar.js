@@ -3,33 +3,16 @@
 import { useState, useEffect } from 'react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { supabase } from '@/lib/supabaseClient';
+import { useAuth } from '@/context/AuthContext';
 
 export default function Sidebar() {
-  const [userRole, setUserRole] = useState(null);
+  const { profile } = useAuth();
+  const userRole = profile?.role;
   const [isOpen, setIsOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
   const pathname = usePathname();
 
   useEffect(() => {
-    const fetchUserRole = async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          const { data } = await supabase
-            .from('users')
-            .select('role')
-            .eq('id', user.id)
-            .single();
-          setUserRole(data?.role || null);
-        }
-      } catch (error) {
-        console.error('Error fetching role:', error);
-      }
-    };
-
-    fetchUserRole();
-
     // Check if mobile
     const checkMobile = () => {
       setIsMobile(window.innerWidth < 768);
@@ -65,23 +48,23 @@ export default function Sidebar() {
       return [
         ...baseItems,
         {
-          name: 'Users',
-          href: '/dashboard/users',
+          name: 'Manage Users',
+          href: '/dashboard/admin/users',
           icon: '👥',
         },
         {
-          name: 'Transactions',
-          href: '/dashboard/transactions',
+          name: 'Manage Transactions',
+          href: '/dashboard/admin/transactions',
           icon: '💳',
         },
         {
-          name: 'Disputes',
-          href: '/dashboard/disputes',
+          name: 'Manage Disputes',
+          href: '/dashboard/admin/disputes',
           icon: '⚖️',
         },
         {
-          name: 'Listings',
-          href: '/dashboard/listings',
+          name: 'Moderate Listings',
+          href: '/dashboard/admin/listings',
           icon: '📦',
         },
       ];
