@@ -53,33 +53,48 @@ Full authentication system implemented:
 - ✅ Email verification flow
 - ✅ RLS policies with security definer functions
 
-### Phase 3: Escrow Core 🔄 IN PROGRESS
+### Phase 3: Escrow Core ✅ COMPLETED
 
-- [ ] Transaction creation
-- [ ] M-Pesa payment processing
-- [ ] Delivery confirmation
-- [ ] Auto-release after 3 days
+- ✅ Transaction API routes (POST /api/transactions, GET /api/transactions)
+- ✅ M-Pesa STK Push payment (POST /api/transactions/[id]/pay)
+- ✅ M-Pesa callback handler (POST /api/mpesa/callback)
+- ✅ Payment status polling (GET /api/transactions/[id]/payment-status)
+- ✅ Seller shipping endpoint (POST /api/transactions/[id]/ship)
+- ✅ Buyer delivery confirmation (POST /api/transactions/[id]/confirm-delivery)
+- ✅ Transaction detail page (/dashboard/transactions/[id])
+- ✅ Transaction creation page (/dashboard/transactions/create)
+- ✅ Auto-release function (pg_cron SQL script at scripts/005_auto_release_cron.sql)
+- ✅ Notification service (lib/notificationService.js)
 
-### Phase 4: Disputes 📋 PLANNED
+### Phase 4: Disputes ✅ COMPLETED
 
-- [ ] Dispute creation
-- [ ] Admin dashboard
-- [ ] Evidence upload
-- [ ] Fair resolution
+- ✅ Dispute creation API (POST /api/disputes, GET /api/disputes)
+- ✅ Evidence upload endpoint (POST /api/disputes/[id]/upload-evidence)
+- ✅ Admin dispute resolution API (POST /api/disputes/[id]/resolve)
+- ✅ Disputes list page (/dashboard/disputes)
+- ✅ Dispute detail page with evidence upload (/dashboard/disputes/[id])
+- ❌ Admin dashboard UI (API exists but no dedicated admin interface)
 
-### Phase 5: UI Components 📋 PLANNED
+### Phase 5: UI Components ⚠️ CRITICAL GAPS
 
-- [ ] Buyer dashboard
-- [ ] Seller dashboard
-- [ ] Admin dashboard
-- [ ] Transaction cards
-- [ ] Forms and validation
+- ✅ Buyer dashboard (/dashboard/buyer) - Can create transactions by entering seller email
+- ❌ Seller dashboard (/dashboard/seller) - **NON-FUNCTIONAL** - No create button, no listing capability, cannot initiate any action
+- ✅ Transaction detail page (/dashboard/transactions/[id]) - Buyers can pay, confirm delivery
+- ✅ Transaction creation form (/dashboard/transactions/create) - Only for buyers to manually enter seller email
+- ✅ Dispute pages (/dashboard/disputes, /dashboard/disputes/[id])
+- ❌ Admin dashboard UI (dedicated admin interface)
+- ❌ Marketplace/browse page - No way to discover sellers or products
+- ❌ Seller listing capability - Sellers cannot list items for buyers to find
 
-### Phase 6: API Routes 📋 PLANNED
+### Phase 6: API Routes ✅ COMPLETED
 
-- [ ] All endpoints implemented
-- [ ] Error handling
-- [ ] Rate limiting
+- ✅ Transaction endpoints (4 routes: create, list, pay, ship, confirm-delivery, payment-status)
+- ✅ Dispute endpoints (3 routes: create, list, upload-evidence, resolve)
+- ✅ M-Pesa callback endpoint
+- ✅ Error handling (all endpoints have try-catch with proper error responses)
+- ✅ Rate limiting utility (lib/rateLimiter.js - production-only)
+- ❌ CORS configuration (not implemented)
+- ❌ Rate limiting applied to all endpoints (utility exists but not used in all routes)
 
 ### Phase 7: Security ✅ COMPLETED (Core)
 
@@ -94,6 +109,130 @@ Full authentication system implemented:
 - [ ] Comprehensive testing
 - [ ] Vercel deployment
 - [ ] Production setup
+
+### Phase 9: Marketplace & Listings ✅ COMPLETED
+
+**Implementation Summary:**
+- ✅ `listings` table in database (id, seller_id, title, description, price, category, images, status)
+- ✅ `categories` table (id, name, slug) with default categories
+- ✅ POST /api/listings - Create listing (sellers only)
+- ✅ GET /api/listings - Browse listings (public with filters)
+- ✅ GET /api/listings/[id] - Get listing details
+- ✅ PUT /api/listings/[id] - Update listing (seller only)
+- ✅ DELETE /api/listings/[id] - Delete listing (seller only)
+- ✅ /marketplace - Browse listings with filters (public page)
+- ✅ /dashboard/listings/create - Create listing (seller)
+- ✅ /dashboard/listings/[id] - Edit/delete listing (seller)
+- ✅ /dashboard/listings - Manage listings (seller)
+- ✅ /listings/[id] - Public listing page with "Buy Now" button (creates transaction)
+- ✅ Category filtering UI
+- ✅ Price filtering UI
+- ✅ Search functionality UI
+- ✅ Update seller dashboard to include "Create Listing" button
+- ✅ Listing validation in lib/validation.js
+- ✅ SQL script at scripts/006_create_listings_tables.sql
+
+**Manual Setup Required:**
+- ❌ Supabase Storage bucket for listing images (user action needed)
+
+**Platform Status:**
+- Sellers can now create listings with images
+- Buyers can browse marketplace with search and filters
+- Buyers can click "Buy Now" to create transactions
+- Platform is now functional for both buyers and sellers
+
+### Phase 10: Ratings & Reviews 📋 FUTURE
+
+**What's Missing:**
+- Database has `ratings` table but no implementation
+- No API endpoints for ratings
+- No UI for users to rate/review transactions
+- No rating display on user profiles
+
+**What Needs Implementation:**
+- [ ] POST /api/ratings - Create rating
+- [ ] GET /api/ratings/[transaction_id] - Get transaction rating
+- [ ] GET /api/users/[id]/ratings - Get user ratings
+- [ ] Rating form in transaction detail page
+- [ ] Rating display on user profiles
+- [ ] Average rating calculation
+- [ ] Rating aggregation for sellers
+
+### Phase 11: KYC Verification 📋 FUTURE
+
+**What's Missing:**
+- Database has `kyc_status` and `kyc_data` fields but no implementation
+- No KYC upload endpoints
+- No admin KYC review interface
+- No ID verification integration
+
+**What Needs Implementation:**
+- [ ] POST /api/kyc/submit - Submit KYC documents
+- [ ] GET /api/kyc/[user_id] - Get KYC status
+- [ ] POST /api/kyc/[user_id]/review - Admin review KYC
+- [ ] KYC upload page
+- [ ] Admin KYC review dashboard
+- [ ] ID document upload to Supabase Storage
+- [ ] Integration with ID verification service (optional)
+
+### Phase 12: Admin Dashboard UI 📋 FUTURE
+
+**What's Missing:**
+- Admin dispute resolution API exists but no UI
+- No admin overview dashboard
+- No user management interface
+- No transaction monitoring interface
+
+**What Needs Implementation:**
+- [ ] /dashboard/admin - Admin overview dashboard
+- [ ] /dashboard/admin/disputes - Dispute resolution interface
+- [ ] /dashboard/admin/users - User management
+- [ ] /dashboard/admin/transactions - Transaction monitoring
+- [ ] Admin statistics and metrics
+- [ ] Admin notification center
+
+### Phase 13: Notification Center UI 📋 FUTURE
+
+**What's Missing:**
+- Notification service exists (lib/notificationService.js) but no UI
+- Users cannot view notifications
+- No notification bell icon in navbar
+- No notification settings
+
+**What Needs Implementation:**
+- [ ] /dashboard/notifications - Notification center page
+- [ ] Notification bell component in navbar
+- [ ] Notification count badge
+- [ ] Mark as read functionality
+- [ ] Notification settings page
+- [ ] Real-time notification updates (optional)
+
+### Phase 14: B2C Payment Integration 📋 FUTURE
+
+**What's Missing:**
+- M-Pesa B2C API integration for fund releases
+- MPESA_SECURITY_CREDENTIAL configuration
+- Seller payout system
+- Transaction completion with actual fund transfer
+
+**What Needs Implementation:**
+- [ ] B2C API integration in lib/mpesaClient.js
+- [ ] POST /api/transactions/[id]/release-funds - Trigger B2C payout
+- [ ] MPESA_SECURITY_CREDENTIAL configuration
+- [ ] Seller wallet balance tracking
+- [ ] Payout history
+- [ ] Payout scheduling
+
+### Phase 15: Additional Features 📋 FUTURE
+
+- [ ] Search functionality across listings
+- [ ] Advanced filtering (location, price range, category)
+- [ ] Real-time updates via WebSockets
+- [ ] Chat/messaging between buyers and sellers
+- [ ] Analytics dashboard for sellers
+- [ ] Mobile app (React Native)
+- [ ] Multi-language support
+- [ ] Currency conversion (beyond KES)
 
 ## 📁 Project Structure
 

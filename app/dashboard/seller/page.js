@@ -1,16 +1,25 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import DashboardLayout from '@/components/dashboard/DashboardLayout';
 import { supabase } from '@/lib/supabaseClient';
 
 export default function SellerDashboard() {
-  const router = useRouter();
   const [user, setUser] = useState(null);
   const [transactions, setTransactions] = useState([]);
+  const [listings, setListings] = useState([]);
+  const [activeTab, setActiveTab] = useState('transactions');
+  const [stats, setStats] = useState({
+    totalSales: 0,
+    earnings: 0,
+    pending: 0,
+    active: 0,
+    totalListings: 0,
+    activeListings: 0,
+    soldListings: 0,
+  });
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('all');
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -106,6 +115,28 @@ export default function SellerDashboard() {
             {transactions.filter((tx) => tx.status === 'escrow').length}
           </p>
         </div>
+      </div>
+
+      {/* Action Buttons */}
+      <div className="mb-8 flex flex-wrap gap-3">
+        <Link
+          href="/dashboard/listings/create"
+          className="bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 transition font-medium"
+        >
+          + Create Listing
+        </Link>
+        <Link
+          href="/dashboard/listings"
+          className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition font-medium"
+        >
+          Manage Listings
+        </Link>
+        <Link
+          href="/marketplace"
+          className="bg-purple-600 text-white px-6 py-3 rounded-lg hover:bg-purple-700 transition font-medium"
+        >
+          Browse Marketplace
+        </Link>
       </div>
 
       {/* Filters */}

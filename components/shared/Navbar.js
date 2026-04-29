@@ -9,6 +9,7 @@ export default function Navbar() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showMenu, setShowMenu] = useState(false);
+  const [userRole, setUserRole] = useState(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -18,6 +19,15 @@ export default function Navbar() {
           data: { user },
         } = await supabase.auth.getUser();
         setUser(user);
+        
+        if (user) {
+          const { data } = await supabase
+            .from('users')
+            .select('role')
+            .eq('id', user.id)
+            .single();
+          setUserRole(data?.role || null);
+        }
       } catch (error) {
         console.error('Error fetching user:', error);
       } finally {
@@ -30,8 +40,18 @@ export default function Navbar() {
     // Listen for auth changes
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange(async (_event, session) => {
       setUser(session?.user || null);
+      if (session?.user) {
+        const { data } = await supabase
+          .from('users')
+          .select('role')
+          .eq('id', session.user.id)
+          .single();
+        setUserRole(data?.role || null);
+      } else {
+        setUserRole(null);
+      }
     });
 
     return () => subscription?.unsubscribe();
@@ -65,6 +85,9 @@ export default function Navbar() {
           <div className="hidden md:flex items-center gap-8">
             <Link href="/" className="hover:text-blue-100 transition">
               Home
+            </Link>
+            <Link href="/marketplace" className="hover:text-blue-100 transition">
+              Marketplace
             </Link>
             {!user && (
               <>
@@ -117,6 +140,18 @@ export default function Navbar() {
         {user && showMenu && (
           <div className="md:hidden bg-blue-700 border-t border-blue-500 py-3 px-4">
             <Link
+              href="/marketplace"
+              className="block text-white hover:text-blue-100 py-2 transition"
+            >
+              Marketplace
+            </Link>
+            <Link
+              href="/dashboard/disputes"
+              className="block text-white hover:text-blue-100 py-2 transition"
+            >
+              Disputes
+            </Link>
+            <Link
               href="/dashboard/profile"
               className="block text-white hover:text-blue-100 py-2 transition"
             >
@@ -134,6 +169,30 @@ export default function Navbar() {
         {/* Desktop Dropdown */}
         {user && showMenu && (
           <div className="hidden md:block absolute right-8 mt-2 bg-white text-gray-800 rounded-lg shadow-xl py-2 min-w-48 z-50">
+            <Link
+              href="/marketplace"
+              className="block px-4 py-2 hover:bg-gray-100 transition"
+            >
+              Marketplace
+            </Link>
+            <Link
+              href="/dashboard/disputes"
+              className="block px-4 py-2 hover:bg-gray-100 transition"
+            >
+              Disputes
+            </Link>
+            {userRole === 'admin' && (
+              <>
+                <Link
+                  href="/dashboard/admin"
+                  className="block px-4 py-2 hover:bg-gray-100 transition"
+                >
+                  Admin Dashboard
+                </Link>
+                <hr className="my-2" />
+              </>
+            )}
+            <hr className="my-2" />
             <Link
               href="/dashboard/profile"
               className="block px-4 py-2 hover:bg-gray-100 transition"
