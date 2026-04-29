@@ -219,59 +219,47 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8">
+    <div className="space-y-8">
       {/* Header */}
-      <div className="mb-8">
+      <div>
         <h1 className="text-3xl font-bold text-gray-900">My Profile</h1>
-        <p className="text-gray-600 mt-2">
-          Manage your account information and settings
+        <p className="text-gray-600 mt-1">
+          Manage your account information and preferences
         </p>
       </div>
 
       {/* Success Message */}
       {successMessage && (
-        <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg flex items-center">
+        <div className="p-4 bg-green-50 border border-green-200 rounded-lg flex items-center gap-3">
           <svg
-            className="w-5 h-5 text-green-600 mr-2"
-            fill="none"
-            stroke="currentColor"
+            className="w-5 h-5 text-green-600 flex-shrink-0"
+            fill="currentColor"
             viewBox="0 0 24 24"
           >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="2"
-              d="M5 13l4 4L19 7"
-            />
+            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
           </svg>
-          <p className="text-green-800">{successMessage}</p>
+          <p className="text-green-700 font-medium text-sm">{successMessage}</p>
         </div>
       )}
 
       {/* Error Message */}
       {errors.form && (
-        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center">
+        <div className="p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-3">
           <svg
-            className="w-5 h-5 text-red-600 mr-2"
-            fill="none"
-            stroke="currentColor"
+            className="w-5 h-5 text-red-600 flex-shrink-0"
+            fill="currentColor"
             viewBox="0 0 24 24"
           >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="2"
-              d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-            />
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
           </svg>
-          <p className="text-red-800">{errors.form}</p>
+          <p className="text-red-700 font-medium text-sm">{errors.form}</p>
         </div>
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Profile Card */}
         <div className="md:col-span-1">
-          <div className="bg-white rounded-lg shadow p-6 text-center">
+          <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6 text-center">
             {/* Avatar */}
             <div className="mb-4">
               {profile?.profile_picture_url ? (
