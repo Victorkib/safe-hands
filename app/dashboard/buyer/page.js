@@ -28,8 +28,8 @@ export default function BuyerDashboard() {
           .from('transactions')
           .select(`
             *,
-            seller:users!transactions_seller_id_fkey(email, full_name),
-            dispute:disputes(id, status)
+            seller:seller_id(email, full_name, id),
+            disputes(id, status)
           `)
           .eq('buyer_id', authUser.id)
           .order('created_at', { ascending: false });
@@ -53,7 +53,7 @@ export default function BuyerDashboard() {
       total: transactionData.length,
       active: transactionData.filter(t => ['initiated', 'escrow', 'delivered'].includes(t.status)).length,
       completed: transactionData.filter(t => t.status === 'released').length,
-      disputed: transactionData.filter(t => t.dispute).length,
+      disputed: transactionData.filter(t => t.disputes && t.disputes.length > 0).length,
     };
     setStats(newStats);
   };

@@ -1,14 +1,17 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
 
 export default function SellerDashboard() {
+  const router = useRouter();
   const [user, setUser] = useState(null);
   const [transactions, setTransactions] = useState([]);
   const [listings, setListings] = useState([]);
   const [activeTab, setActiveTab] = useState('transactions');
+  const [filter, setFilter] = useState('all');
   const [stats, setStats] = useState({
     totalSales: 0,
     earnings: 0,
@@ -35,14 +38,25 @@ export default function SellerDashboard() {
         setUser(authUser);
 
         // Fetch seller transactions
-        const { data: txns, error } = await supabase
+        const { data: txns, error: txnError } = await supabase
           .from('transactions')
           .select('*')
           .eq('seller_id', authUser.id)
           .order('created_at', { ascending: false });
 
-        if (!error && txns) {
+        if (!txnError && txns) {
           setTransactions(txns);
+        }
+
+        // Fetch seller listings
+        const { data: lstngs, error: listError } = await supabase
+          .from('listings')
+          .select('*')
+          .eq('seller_id', authUser.id)
+          .order('created_at', { ascending: false });
+
+        if (!listError && lstngs) {
+          setListings(lstngs);
         }
       } catch (error) {
         console.error('Error fetching data:', error);

@@ -9,7 +9,12 @@ export default function Marketplace() {
   const [listings, setListings] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
   const [filters, setFilters] = useState({
+    category: '',
+    minPrice: '',
     maxPrice: '',
     search: '',
     sort: 'newest',
@@ -32,6 +37,7 @@ export default function Marketplace() {
 
   const fetchListings = async () => {
     setLoading(true);
+    setError(null);
     try {
       const params = new URLSearchParams({
         page,
@@ -50,9 +56,14 @@ export default function Marketplace() {
       if (result.success) {
         setListings(result.listings);
         setTotalPages(result.pagination.pages);
+      } else {
+        setError(result.error || 'Failed to fetch listings');
+        setListings([]);
       }
-    } catch (error) {
-      console.error('Error fetching listings:', error);
+    } catch (err) {
+      console.error('[v0] Error fetching listings:', err);
+      setError('Failed to load listings. Please try again.');
+      setListings([]);
     } finally {
       setLoading(false);
     }
@@ -166,6 +177,27 @@ export default function Marketplace() {
         </div>
       </div>
 
+      {/* Error Message */}
+      {error && (
+        <div className="mb-8 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-3">
+          <svg className="w-5 h-5 text-red-600 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+          </svg>
+          <div className="flex-1">
+            <p className="text-red-700 font-medium text-sm">{error}</p>
+          </div>
+          <button
+            onClick={() => {
+              setError(null);
+              fetchListings();
+            }}
+            className="text-red-600 hover:text-red-700 font-medium text-sm"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* Listings Grid */}
       {loading ? (
         <div className="flex items-center justify-center min-h-96">
@@ -174,7 +206,7 @@ export default function Marketplace() {
             <p className="text-gray-600 font-medium">Loading listings...</p>
           </div>
         </div>
-      ) : listings.length === 0 ? (
+      ) : listings.length === 0 && !error ? (
         <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-12 text-center">
           <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">

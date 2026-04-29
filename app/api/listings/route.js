@@ -26,8 +26,8 @@ export async function GET(request) {
       .from('listings')
       .select(`
         *,
-        category:categories(name, slug),
-        seller:users(id, full_name, email)
+        category:category_id(name, slug),
+        seller:seller_id(id, full_name, email)
       `, { count: 'exact' })
       .eq('status', 'active');
 
