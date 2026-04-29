@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import Layout from '@/components/shared/Layout';
+import PublicLayout from '@/components/layout/PublicLayout';
 import { supabase } from '@/lib/supabaseClient';
 
 export default function HomePage() {
@@ -48,32 +48,32 @@ export default function HomePage() {
   // Show loading while checking auth
   if (isLoading) {
     return (
-      <Layout>
+      <PublicLayout>
         <div className="flex items-center justify-center min-h-screen">
           <div className="text-center">
             <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
             <p className="text-gray-600">Loading...</p>
           </div>
         </div>
-      </Layout>
+      </PublicLayout>
     );
   }
 
   // If user is authenticated, don't render the page (they'll be redirected)
   if (isAuthenticated) {
     return (
-      <Layout>
+      <PublicLayout>
         <div className="flex items-center justify-center min-h-screen">
           <div className="text-center">
             <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
             <p className="text-gray-600">Redirecting to dashboard...</p>
           </div>
         </div>
-      </Layout>
+      </PublicLayout>
     );
   }
   return (
-    <Layout>
+    <PublicLayout>
       {/* Hero Section */}
       <section className="py-20 text-center">
         <div className="max-w-4xl mx-auto">
@@ -399,6 +399,6 @@ export default function HomePage() {
           </div>
         </div>
       </section>
-    </Layout>
+    </PublicLayout>
   );
 }

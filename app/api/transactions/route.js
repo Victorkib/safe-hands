@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { validateTransactionInput } from '@/lib/validation';
+import { validateTransactionForm } from '@/lib/validation';
 
 // Initialize Supabase client with service role for admin operations
 const supabase = createClient(
@@ -53,7 +53,7 @@ export async function POST(request) {
     const { seller_id, amount, description, seller_email } = body;
 
     // Validate input
-    const validationError = validateTransactionInput(body);
+    const validationError = validateTransactionForm(body);
     if (validationError) {
       return Response.json(
         { error: validationError },

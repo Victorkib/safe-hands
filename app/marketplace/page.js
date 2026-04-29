@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import PublicLayout from '@/components/layout/PublicLayout';
 import { supabase } from '@/lib/supabaseClient';
 
 export default function Marketplace() {
@@ -69,7 +70,7 @@ export default function Marketplace() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto">
+    <PublicLayout>
       <div className="mb-8">
         <h1 className="text-4xl font-bold text-gray-900">Marketplace</h1>
         <p className="text-gray-600 mt-2">Browse listings from sellers across Kenya</p>
@@ -245,6 +246,6 @@ export default function Marketplace() {
           )}
         </>
       )}
-    </div>
+    </PublicLayout>
   );
 }

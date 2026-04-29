@@ -168,60 +168,69 @@ export default function SignUpForm() {
   // Verification Modal
   if (showVerificationModal) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center py-12 px-4">
-        <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8">
+      <div className="w-full max-w-md">
+        {/* Card Container */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-8">
+          {/* Header */}
           <div className="text-center mb-8">
-            <div className="w-12 h-12 bg-green-600 text-white rounded-full flex items-center justify-center font-bold mx-auto mb-4">
-              ✉️
+            <div className="inline-flex items-center justify-center w-14 h-14 bg-green-100 rounded-lg mb-4">
+              <span className="text-3xl">✉️</span>
             </div>
-            <h1 className="text-3xl font-bold text-gray-900">
-              Check Your Email
-            </h1>
-            <p className="text-gray-600 mt-2">
-              We&apos;ve sent a verification link
-            </p>
+            <h1 className="text-2xl font-bold text-gray-900">Check Your Email</h1>
+            <p className="text-gray-600 text-sm mt-1">Verification link sent</p>
           </div>
 
+          {/* Email Info */}
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-6">
-            <p className="text-gray-700 mb-4">
-              A verification email has been sent to:
-            </p>
-            <p className="font-medium text-blue-600 mb-6">{signupEmail}</p>
+            <p className="text-gray-700 text-sm mb-3">Verification email sent to:</p>
+            <p className="font-semibold text-blue-600 mb-6 break-all">{signupEmail}</p>
 
-            <p className="text-gray-600 text-sm mb-4">
-              Click the link in the email to verify your account. The link
-              expires in 24 hours.
+            <p className="text-gray-600 text-sm mb-6">
+              Click the link in your email to verify your account. The link expires in 24 hours.
             </p>
 
+            {/* Primary Action */}
             <button
               onClick={handleGoToVerify}
-              className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition font-medium mb-3"
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 rounded-lg transition-colors mb-3"
             >
-              I Verified My Email
+              I&apos;ve Verified My Email
             </button>
 
+            {/* Secondary Action */}
             <button
               onClick={handleResendEmail}
               disabled={resendLoading}
-              className="w-full bg-gray-200 text-gray-800 py-2 rounded-lg hover:bg-gray-300 transition disabled:bg-gray-400 disabled:cursor-not-allowed font-medium"
+              className="w-full px-4 py-2.5 border-2 border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {resendLoading ? 'Sending...' : 'Resend Email'}
+              {resendLoading ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="w-3 h-3 border-2 border-gray-600 border-t-transparent rounded-full animate-spin"></span>
+                  Sending...
+                </span>
+              ) : (
+                'Resend Email'
+              )}
             </button>
           </div>
 
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
-            <p className="text-yellow-800 text-xs">
-              <strong>Tip:</strong> Check your spam folder if you don&apos;t see
-              the email in 2 minutes.
+          {/* Help Tip */}
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6">
+            <p className="text-amber-700 text-xs flex gap-2">
+              <span className="flex-shrink-0">💡</span>
+              <span>
+                <strong>Tip:</strong> Check your spam or promotions folder if you don&apos;t see the email in 2 minutes.
+              </span>
             </p>
           </div>
 
-          <p className="text-center text-gray-600 text-sm">
+          {/* Back Link */}
+          <p className="text-center">
             <Link
               href="/auth/login"
-              className="text-blue-600 hover:text-blue-700 font-medium"
+              className="text-blue-600 hover:text-blue-700 font-medium text-sm transition"
             >
-              Back to Login
+              ← Back to Login
             </Link>
           </p>
         </div>
@@ -231,23 +240,29 @@ export default function SignUpForm() {
 
   // Signup Form
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center py-12 px-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8">
+    <div className="w-full max-w-md">
+      {/* Card Container */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-8">
+        {/* Header */}
         <div className="text-center mb-8">
-          <div className="w-12 h-12 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold mx-auto mb-4">
-            S
+          <div className="inline-flex items-center justify-center w-12 h-12 bg-blue-100 rounded-lg mb-4">
+            <div className="w-6 h-6 bg-blue-600 rounded text-white flex items-center justify-center font-bold text-sm">
+              SH
+            </div>
           </div>
-          <h1 className="text-3xl font-bold text-gray-900">Create Account</h1>
-          <p className="text-gray-600 mt-2">Join Safe Hands Escrow today</p>
+          <h1 className="text-2xl font-bold text-gray-900">Create Account</h1>
+          <p className="text-gray-600 text-sm mt-1">Start trading safely on Safe Hands</p>
         </div>
 
         {/* Form Errors */}
         {errors.form && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
-            <p className="text-red-800 text-sm">{errors.form}</p>
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex gap-3">
+            <span className="text-red-600 text-lg">⚠</span>
+            <p className="text-red-700 text-sm flex-1">{errors.form}</p>
           </div>
         )}
 
+        {/* Signup Form */}
         <form
           onSubmit={handleSubmit}
           className="space-y-4"
@@ -255,7 +270,7 @@ export default function SignUpForm() {
         >
           {/* Full Name */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-semibold text-gray-900 mb-2">
               Full Name
             </label>
             <input
@@ -264,19 +279,19 @@ export default function SignUpForm() {
               value={formData.name}
               onChange={handleInputChange}
               placeholder="John Doe"
-              className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition ${
-                errors.name ? 'border-red-500' : 'border-gray-300'
+              className={`w-full px-4 py-2.5 border rounded-lg text-sm transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                errors.name ? 'border-red-300 bg-red-50' : 'border-gray-300 bg-white'
               }`}
               disabled={loading}
             />
             {errors.name && (
-              <p className="text-red-500 text-xs mt-1">{errors.name}</p>
+              <p className="text-red-600 text-xs mt-1.5">⚠ {errors.name}</p>
             )}
           </div>
 
           {/* Email */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-semibold text-gray-900 mb-2">
               Email Address
             </label>
             <input
@@ -284,64 +299,64 @@ export default function SignUpForm() {
               name="email"
               value={formData.email}
               onChange={handleInputChange}
-              placeholder="you@example.com"
-              className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition ${
-                errors.email ? 'border-red-500' : 'border-gray-300'
+              placeholder="name@company.com"
+              className={`w-full px-4 py-2.5 border rounded-lg text-sm transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                errors.email ? 'border-red-300 bg-red-50' : 'border-gray-300 bg-white'
               }`}
               disabled={loading}
             />
             {errors.email && (
-              <p className="text-red-500 text-xs mt-1">{errors.email}</p>
+              <p className="text-red-600 text-xs mt-1.5">⚠ {errors.email}</p>
             )}
           </div>
 
           {/* Phone */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Phone Number (Kenya)
+            <label className="block text-sm font-semibold text-gray-900 mb-2">
+              Phone (Kenya)
             </label>
             <input
               type="tel"
               name="phone"
               value={formData.phone}
               onChange={handleInputChange}
-              placeholder="07 XXXX XXXX or +254XXXXXXXXX"
-              className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition ${
-                errors.phone ? 'border-red-500' : 'border-gray-300'
+              placeholder="07XX XXXX XX"
+              className={`w-full px-4 py-2.5 border rounded-lg text-sm transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                errors.phone ? 'border-red-300 bg-red-50' : 'border-gray-300 bg-white'
               }`}
               disabled={loading}
             />
             {errors.phone && (
-              <p className="text-red-500 text-xs mt-1">{errors.phone}</p>
+              <p className="text-red-600 text-xs mt-1.5">⚠ {errors.phone}</p>
             )}
           </div>
 
           {/* Role Selection */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-semibold text-gray-900 mb-2">
               I am a:
             </label>
             <select
               name="role"
               value={formData.role}
               onChange={handleInputChange}
-              className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition ${
-                errors.role ? 'border-red-500' : 'border-gray-300'
+              className={`w-full px-4 py-2.5 border rounded-lg text-sm transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                errors.role ? 'border-red-300 bg-red-50' : 'border-gray-300 bg-white'
               }`}
               disabled={loading}
             >
-              <option value="buyer">Buyer</option>
-              <option value="seller">Seller</option>
+              <option value="buyer">Buyer only</option>
+              <option value="seller">Seller only</option>
               <option value="buyer_seller">Both Buyer & Seller</option>
             </select>
             {errors.role && (
-              <p className="text-red-500 text-xs mt-1">{errors.role}</p>
+              <p className="text-red-600 text-xs mt-1.5">⚠ {errors.role}</p>
             )}
           </div>
 
           {/* Password */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-semibold text-gray-900 mb-2">
               Password
             </label>
             <input
@@ -350,37 +365,37 @@ export default function SignUpForm() {
               value={formData.password}
               onChange={handleInputChange}
               placeholder="••••••••"
-              className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition ${
-                errors.password ? 'border-red-500' : 'border-gray-300'
+              className={`w-full px-4 py-2.5 border rounded-lg text-sm transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                errors.password ? 'border-red-300 bg-red-50' : 'border-gray-300 bg-white'
               }`}
               disabled={loading}
             />
             {formData.password && (
-              <div className="mt-2">
-                <div className="flex justify-between items-center mb-1">
-                  <span className="text-xs text-gray-600">
-                    Password strength:
+              <div className="mt-2.5">
+                <div className="flex justify-between items-center mb-1.5">
+                  <span className="text-xs text-gray-600 font-medium">
+                    Strength: {getPasswordStrengthText()}
                   </span>
-                  <span className="text-xs font-medium text-gray-700">
-                    {getPasswordStrengthText()}
+                  <span className="text-xs font-semibold">
+                    {passwordStrength}%
                   </span>
                 </div>
-                <div className="w-full bg-gray-200 rounded-full h-2">
+                <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
                   <div
-                    className={`h-2 rounded-full transition-all ${getPasswordStrengthColor()}`}
+                    className={`h-full transition-all duration-300 ${getPasswordStrengthColor()}`}
                     style={{ width: `${passwordStrength}%` }}
                   />
                 </div>
               </div>
             )}
             {errors.password && (
-              <p className="text-red-500 text-xs mt-1">{errors.password}</p>
+              <p className="text-red-600 text-xs mt-1.5">⚠ {errors.password}</p>
             )}
           </div>
 
           {/* Confirm Password */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-semibold text-gray-900 mb-2">
               Confirm Password
             </label>
             <input
@@ -389,38 +404,58 @@ export default function SignUpForm() {
               value={formData.confirmPassword}
               onChange={handleInputChange}
               placeholder="••••••••"
-              className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition ${
-                errors.confirmPassword ? 'border-red-500' : 'border-gray-300'
+              className={`w-full px-4 py-2.5 border rounded-lg text-sm transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                errors.confirmPassword ? 'border-red-300 bg-red-50' : 'border-gray-300 bg-white'
               }`}
               disabled={loading}
             />
             {errors.confirmPassword && (
-              <p className="text-red-500 text-xs mt-1">
-                {errors.confirmPassword}
-              </p>
+              <p className="text-red-600 text-xs mt-1.5">⚠ {errors.confirmPassword}</p>
             )}
           </div>
 
-          {/* Submit Button */}
+          {/* Terms & Conditions */}
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs text-gray-600">
+            By creating an account, you agree to our <a href="#" className="text-blue-600 hover:underline">Terms</a> and <a href="#" className="text-blue-600 hover:underline">Privacy Policy</a>
+          </div>
+
+          {/* Create Account Button */}
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition disabled:bg-gray-400 disabled:cursor-not-allowed font-medium"
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 rounded-lg transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed mt-6"
           >
-            {loading ? 'Creating Account...' : 'Create Account'}
+            {loading ? (
+              <span className="flex items-center justify-center gap-2">
+                <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                Creating Account...
+              </span>
+            ) : (
+              'Create Account'
+            )}
           </button>
         </form>
 
-        {/* Login Link */}
-        <p className="text-center text-gray-600 text-sm mt-6">
-          Already have an account?{' '}
-          <Link
-            href="/auth/login"
-            className="text-blue-600 hover:text-blue-700 font-medium"
-          >
-            Login here
-          </Link>
-        </p>
+        {/* Divider */}
+        <div className="my-6 flex items-center gap-3">
+          <div className="flex-1 h-px bg-gray-200"></div>
+          <span className="text-xs text-gray-600 font-medium">HAVE ACCOUNT?</span>
+          <div className="flex-1 h-px bg-gray-200"></div>
+        </div>
+
+        {/* Login CTA */}
+        <Link
+          href="/auth/login"
+          className="w-full block text-center px-4 py-2.5 border-2 border-blue-600 text-blue-600 font-semibold rounded-lg hover:bg-blue-50 transition-colors"
+        >
+          Sign In Instead
+        </Link>
+      </div>
+
+      {/* Trust Indicators */}
+      <div className="mt-6 text-center text-xs text-gray-600 space-y-2">
+        <p>🔐 Fast & Secure • 📱 Instant M-Pesa Integration</p>
+        <p>✓ No hidden fees • ✓ Kenya-based support</p>
       </div>
     </div>
   );

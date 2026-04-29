@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import DashboardLayout from '@/components/dashboard/DashboardLayout';
 import { supabase } from '@/lib/supabaseClient';
 
 export default function BuyerDashboard() {
@@ -125,79 +124,76 @@ export default function BuyerDashboard() {
 
   if (loading) {
     return (
-      <DashboardLayout title="Buyer Dashboard">
-        <div className="flex items-center justify-center h-64">
-          <div className="text-center">
-            <div className="spinner w-8 h-8 border-2 border-primary border-t-transparent mx-auto mb-4"></div>
-            <p className="text-muted-foreground">Loading transactions...</p>
-          </div>
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center">
+          <div className="spinner w-8 h-8 border-2 border-primary border-t-transparent mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Loading transactions...</p>
         </div>
-      </DashboardLayout>
+      </div>
     );
   }
 
   return (
-    <DashboardLayout 
-      title="Buyer Dashboard" 
-      breadcrumbs={[
-        { name: 'Dashboard', href: '/dashboard/buyer' },
-        { name: 'Buyer' }
-      ]}
-    >
-      <div className="space-y-6">
+      <div className="space-y-8">
+        {/* Header */}
+        <div className="flex flex-col gap-2">
+          <h1 className="text-3xl font-bold text-gray-900">Welcome Back, Buyer</h1>
+          <p className="text-gray-600">Manage your escrow transactions and find items you love</p>
+        </div>
+
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="card card-hover p-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+          <div className="bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md hover:border-gray-300 transition-all duration-200 p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Total Transactions</p>
-                <p className="text-2xl font-bold text-foreground mt-1">{stats.total}</p>
+                <p className="text-sm font-medium text-gray-600">Total Transactions</p>
+                <p className="text-3xl font-bold text-gray-900 mt-2">{stats.total}</p>
               </div>
-              <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 012 2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+              <div className="w-14 h-14 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                <svg className="w-7 h-7 text-blue-600" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M9 5a2 2 0 012-2h6a2 2 0 012 2v2h1a2 2 0 012 2v3h-2V9H8v3H6V9a2 2 0 012-2h1V5zm0 0V3a1 1 0 011-1h6a1 1 0 011 1v2M6 9v10a2 2 0 002 2h8a2 2 0 002-2V9m-8 6h4" />
                 </svg>
               </div>
             </div>
           </div>
 
-          <div className="card card-hover p-6">
+          <div className="bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md hover:border-gray-300 transition-all duration-200 p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Active Transactions</p>
-                <p className="text-2xl font-bold text-foreground mt-1">{stats.active}</p>
+                <p className="text-sm font-medium text-gray-600">Active Transactions</p>
+                <p className="text-3xl font-bold text-gray-900 mt-2">{stats.active}</p>
               </div>
-              <div className="w-12 h-12 bg-yellow-100 rounded-lg flex items-center justify-center">
-                <svg className="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0" />
+              <div className="w-14 h-14 bg-amber-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                <svg className="w-7 h-7 text-amber-600" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z" />
                 </svg>
               </div>
             </div>
           </div>
 
-          <div className="card card-hover p-6">
+          <div className="bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md hover:border-gray-300 transition-all duration-200 p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Completed</p>
-                <p className="text-2xl font-bold text-foreground mt-1">{stats.completed}</p>
+                <p className="text-sm font-medium text-gray-600">Completed</p>
+                <p className="text-3xl font-bold text-gray-900 mt-2">{stats.completed}</p>
               </div>
-              <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
-                <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0" />
+              <div className="w-14 h-14 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                <svg className="w-7 h-7 text-green-600" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
                 </svg>
               </div>
             </div>
           </div>
 
-          <div className="card card-hover p-6">
+          <div className="bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md hover:border-gray-300 transition-all duration-200 p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Disputes</p>
-                <p className="text-2xl font-bold text-foreground mt-1">{stats.disputed}</p>
+                <p className="text-sm font-medium text-gray-600">Open Disputes</p>
+                <p className="text-3xl font-bold text-gray-900 mt-2">{stats.disputed}</p>
               </div>
-              <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
-                <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.432-2.5L6.6 15.5c-.562-.833-.562-1.667 0-2.5l6.85-3.5c1.07-.833 2.092.833 1.432 2.5z" />
+              <div className="w-14 h-14 bg-red-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                <svg className="w-7 h-7 text-red-600" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
                 </svg>
               </div>
             </div>
@@ -205,47 +201,47 @@ export default function BuyerDashboard() {
         </div>
 
         {/* Quick Actions */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Link href="/dashboard/transactions/create" className="card card-hover p-6 group">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <Link href="/dashboard/transactions/create" className="bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md hover:border-blue-300 transition-all duration-200 p-6 group">
             <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-primary rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
-                <svg className="w-6 h-6 text-primary-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4m8 0v8H4" />
+              <div className="w-14 h-14 bg-blue-100 rounded-lg flex items-center justify-center group-hover:bg-blue-600 transition-colors duration-200">
+                <svg className="w-7 h-7 text-blue-600 group-hover:text-white transition-colors duration-200" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm5 11h-4v4h-2v-4H7v-2h4V7h2v4h4v2z" />
                 </svg>
               </div>
               <div>
-                <h3 className="text-lg font-semibold text-foreground group-hover:text-primary transition-colors duration-200">Create Transaction</h3>
-                <p className="text-sm text-muted-foreground mt-1">Start a new escrow transaction</p>
+                <h3 className="text-lg font-semibold text-gray-900 group-hover:text-blue-600 transition-colors duration-200">Create Transaction</h3>
+                <p className="text-sm text-gray-600 mt-1">Start a new escrow transaction</p>
               </div>
             </div>
           </Link>
 
-          <Link href="/marketplace" className="card card-hover p-6 group">
+          <Link href="/marketplace" className="bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md hover:border-blue-300 transition-all duration-200 p-6 group">
             <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-secondary rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
-                <svg className="w-6 h-6 text-secondary-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0" />
+              <div className="w-14 h-14 bg-purple-100 rounded-lg flex items-center justify-center group-hover:bg-purple-600 transition-colors duration-200">
+                <svg className="w-7 h-7 text-purple-600 group-hover:text-white transition-colors duration-200" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M15.5 1h-8C6.12 1 5 2.12 5 3.5v17C5 21.88 6.12 23 7.5 23h8c1.38 0 2.5-1.12 2.5-2.5v-17C18 2.12 16.88 1 15.5 1zm-4 21c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm4.5-4H7V4h9v14z" />
                 </svg>
               </div>
               <div>
-                <h3 className="text-lg font-semibold text-foreground group-hover:text-secondary transition-colors duration-200">Browse Marketplace</h3>
-                <p className="text-sm text-muted-foreground mt-1">Discover items and services</p>
+                <h3 className="text-lg font-semibold text-gray-900 group-hover:text-purple-600 transition-colors duration-200">Browse Marketplace</h3>
+                <p className="text-sm text-gray-600 mt-1">Discover items and sellers</p>
               </div>
             </div>
           </Link>
         </div>
 
         {/* Transactions Table */}
-        <div className="card">
-          <div className="p-6 border-b border-border">
+        <div className="bg-white border border-gray-200 rounded-xl shadow-sm">
+          <div className="p-6 border-b border-gray-200">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <h2 className="text-xl font-bold text-foreground">Recent Transactions</h2>
-              <div className="flex items-center gap-2">
-                <label className="text-sm text-muted-foreground">Filter:</label>
+              <h2 className="text-xl font-bold text-gray-900">Recent Transactions</h2>
+              <div className="flex items-center gap-3">
+                <label className="text-sm font-medium text-gray-700">Filter:</label>
                 <select
                   value={filter}
                   onChange={(e) => setFilter(e.target.value)}
-                  className="input-field px-3 py-2 text-sm"
+                  className="px-4 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-gray-900"
                 >
                   <option value="all">All Transactions</option>
                   <option value="initiated">Initiated</option>
@@ -261,31 +257,36 @@ export default function BuyerDashboard() {
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-border bg-muted/50">
-                  <th className="text-left px-6 py-3 text-xs font-medium text-muted-foreground uppercase">Transaction</th>
-                  <th className="text-left px-6 py-3 text-xs font-medium text-muted-foreground uppercase">Seller</th>
-                  <th className="text-left px-6 py-3 text-xs font-medium text-muted-foreground uppercase">Amount</th>
-                  <th className="text-left px-6 py-3 text-xs font-medium text-muted-foreground uppercase">Status</th>
-                  <th className="text-left px-6 py-3 text-xs font-medium text-muted-foreground uppercase">Date</th>
-                  <th className="text-left px-6 py-3 text-xs font-medium text-muted-foreground uppercase">Actions</th>
+                <tr className="bg-gray-50 border-b border-gray-200">
+                  <th className="text-left px-6 py-4 text-xs font-semibold text-gray-700 uppercase tracking-wider">Transaction</th>
+                  <th className="text-left px-6 py-4 text-xs font-semibold text-gray-700 uppercase tracking-wider">Seller</th>
+                  <th className="text-left px-6 py-4 text-xs font-semibold text-gray-700 uppercase tracking-wider">Amount</th>
+                  <th className="text-left px-6 py-4 text-xs font-semibold text-gray-700 uppercase tracking-wider">Status</th>
+                  <th className="text-left px-6 py-4 text-xs font-semibold text-gray-700 uppercase tracking-wider">Date</th>
+                  <th className="text-left px-6 py-4 text-xs font-semibold text-gray-700 uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredTransactions.length === 0 ? (
                   <tr>
-                    <td colSpan="6" className="text-center py-8 text-muted-foreground">
+                    <td colSpan="6" className="text-center py-12">
                       <div className="flex flex-col items-center">
-                        <svg className="w-12 h-12 text-muted-foreground mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 012 2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
-                        </svg>
-                        <p className="text-lg font-medium">No transactions found</p>
-                        <p className="text-sm text-muted-foreground mt-1">
-                          {filter === 'all' ? 'Start your first transaction' : `No ${filter} transactions`}
+                        <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                          <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 012 2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                          </svg>
+                        </div>
+                        <p className="text-lg font-semibold text-gray-900">No transactions yet</p>
+                        <p className="text-sm text-gray-600 mt-1 mb-4">
+                          {filter === 'all' ? 'Start your first transaction to get began' : `No ${filter} transactions found`}
                         </p>
                         <Link 
                           href="/dashboard/transactions/create" 
-                          className="btn-primary mt-4 inline-flex"
+                          className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
                         >
+                          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm5 11h-4v4h-2v-4H7v-2h4V7h2v4h4v2z" />
+                          </svg>
                           Create Transaction
                         </Link>
                       </div>
@@ -293,42 +294,42 @@ export default function BuyerDashboard() {
                   </tr>
                 ) : (
                   filteredTransactions.map((transaction) => (
-                    <tr key={transaction.id} className="border-b border-border hover:bg-muted/30 transition-colors duration-150">
+                    <tr key={transaction.id} className="border-b border-gray-200 hover:bg-gray-50 transition-colors duration-150">
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2">
-                          <span className="font-mono text-sm text-muted-foreground">
+                          <span className="font-mono text-sm text-gray-700 font-semibold">
                             #{transaction.id.slice(0, 8)}
                           </span>
                         </div>
                       </td>
                       <td className="px-6 py-4">
                         <div>
-                          <p className="font-medium text-foreground">{transaction.seller?.full_name || 'N/A'}</p>
-                          <p className="text-sm text-muted-foreground">{transaction.seller?.email}</p>
+                          <p className="font-semibold text-gray-900">{transaction.seller?.full_name || 'N/A'}</p>
+                          <p className="text-sm text-gray-600">{transaction.seller?.email}</p>
                         </div>
                       </td>
                       <td className="px-6 py-4">
-                        <span className="font-semibold text-foreground">
+                        <span className="font-bold text-gray-900">
                           {formatAmount(transaction.amount)}
                         </span>
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2">
                           {getStatusIcon(transaction.status)}
-                          <span className={`status-badge ${getStatusColor(transaction.status)}`}>
+                          <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(transaction.status)}`}>
                             {transaction.status}
                           </span>
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-sm text-muted-foreground">
+                      <td className="px-6 py-4 text-sm text-gray-700 font-medium">
                         {formatDate(transaction.created_at)}
                       </td>
                       <td className="px-6 py-4">
                         <Link
                           href={`/dashboard/transactions/${transaction.id}`}
-                          className="text-primary hover:text-primary/80 font-medium text-sm transition-colors duration-150"
+                          className="text-blue-600 hover:text-blue-700 font-semibold text-sm transition-colors duration-150"
                         >
-                          View Details
+                          View Details →
                         </Link>
                       </td>
                     </tr>
@@ -339,6 +340,5 @@ export default function BuyerDashboard() {
           </div>
         </div>
       </div>
-    </DashboardLayout>
-  );
+    );
 }

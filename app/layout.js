@@ -29,11 +29,11 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en" className="scroll-smooth">
       <head>
-        <meta name="theme-color" content="#0f172a" />
+        <meta name="theme-color" content="#2563eb" />
         <link rel="icon" href="/favicon.ico" />
       </head>
       <body
-        className={`${geist.className} antialiased bg-slate-50 text-slate-900`}
+        className={`${geist.className} antialiased bg-white text-slate-900`}
       >
         {children}
         {process.env.NODE_ENV === 'production' && <Analytics />}

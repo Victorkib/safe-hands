@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import DashboardLayout from '@/components/dashboard/DashboardLayout';
 import { supabase } from '@/lib/supabaseClient';
 
 export default function TransactionDetail() {
@@ -245,15 +244,7 @@ export default function TransactionDetail() {
   }
 
   return (
-    <DashboardLayout 
-      title="Transaction Details" 
-      breadcrumbs={[
-        { name: 'Dashboard', href: userRole === 'seller' ? '/dashboard/seller' : '/dashboard/buyer' },
-        { name: 'Transactions', href: userRole === 'seller' ? '/dashboard/seller' : '/dashboard/buyer' },
-        { name: 'Details' }
-      ]}
-    >
-      {/* Transaction Card */}
+    <>
       <div className="bg-white rounded-lg shadow p-6 mb-6">
         <div className="flex justify-between items-start mb-4">
           <div>
@@ -298,7 +289,6 @@ export default function TransactionDetail() {
         </div>
       </div>
 
-      {/* Payment Information */}
       <div className="bg-white rounded-lg shadow p-6 mb-6">
         <h2 className="text-xl font-bold text-gray-900 mb-4">Payment Information</h2>
         <div className="grid grid-cols-2 gap-4">
@@ -570,7 +560,6 @@ export default function TransactionDetail() {
           </div>
         </div>
       )}
-      </div>
-    </DashboardLayout>
+    </>
   );
 }

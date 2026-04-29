@@ -128,7 +128,6 @@ export default function LoginForm() {
 
       // Successful login
       console.log('[v0] Login successful for:', authData.user.email);
-      setSuccessMessage('Login successful! Redirecting...');
 
       // Get user profile to determine dashboard
       if (authData.user) {
@@ -183,35 +182,41 @@ export default function LoginForm() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center py-12 px-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8">
+    <div className="w-full max-w-md">
+      {/* Card Container */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-8">
         {/* Header */}
         <div className="text-center mb-8">
-          <div className="w-12 h-12 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold mx-auto mb-4">
-            S
+          <div className="inline-flex items-center justify-center w-12 h-12 bg-blue-100 rounded-lg mb-4">
+            <div className="w-6 h-6 bg-blue-600 rounded text-white flex items-center justify-center font-bold text-sm">
+              SH
+            </div>
           </div>
-          <h1 className="text-3xl font-bold text-gray-900">Welcome Back</h1>
-          <p className="text-gray-600 mt-2">Login to your Safe Hands account</p>
+          <h1 className="text-2xl font-bold text-gray-900">Welcome Back</h1>
+          <p className="text-gray-600 text-sm mt-1">Sign in to your Safe Hands account</p>
         </div>
 
         {/* Success Message */}
         {successMessage && (
-          <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
-            <p className="text-green-800 text-sm">{successMessage}</p>
+          <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg flex gap-3">
+            <span className="text-green-600 text-lg">✓</span>
+            <p className="text-green-700 text-sm flex-1">{successMessage}</p>
           </div>
         )}
 
         {/* Form Errors */}
         {errors.form && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
-            <p className="text-red-800 text-sm">{errors.form}</p>
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex gap-3">
+            <span className="text-red-600 text-lg">⚠</span>
+            <p className="text-red-700 text-sm flex-1">{errors.form}</p>
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Email */}
+        {/* Login Form */}
+        <form onSubmit={handleSubmit} className="space-y-5">
+          {/* Email Field */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-semibold text-gray-900 mb-2">
               Email Address
             </label>
             <input
@@ -219,22 +224,32 @@ export default function LoginForm() {
               name="email"
               value={formData.email}
               onChange={handleInputChange}
-              placeholder="you@example.com"
-              className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition ${
-                errors.email ? 'border-red-500' : 'border-gray-300'
+              placeholder="name@company.com"
+              className={`w-full px-4 py-2.5 border rounded-lg text-sm transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                errors.email ? 'border-red-300 bg-red-50' : 'border-gray-300 bg-white'
               }`}
               disabled={loading}
             />
             {errors.email && (
-              <p className="text-red-500 text-xs mt-1">{errors.email}</p>
+              <p className="text-red-600 text-xs mt-1.5 flex items-center gap-1">
+                <span>⚠</span> {errors.email}
+              </p>
             )}
           </div>
 
-          {/* Password */}
+          {/* Password Field */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Password
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-semibold text-gray-900">
+                Password
+              </label>
+              <Link
+                href="/auth/forgot-password"
+                className="text-blue-600 hover:text-blue-700 text-xs font-medium transition"
+              >
+                Forgot?
+              </Link>
+            </div>
             <div className="relative">
               <input
                 type={showPassword ? 'text' : 'password'}
@@ -242,70 +257,82 @@ export default function LoginForm() {
                 value={formData.password}
                 onChange={handleInputChange}
                 placeholder="••••••••"
-                className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition ${
-                  errors.password ? 'border-red-500' : 'border-gray-300'
+                className={`w-full px-4 py-2.5 border rounded-lg text-sm transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent pr-11 ${
+                  errors.password ? 'border-red-300 bg-red-50' : 'border-gray-300 bg-white'
                 }`}
                 disabled={loading}
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-600 hover:text-gray-900"
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-900 text-sm transition"
+                disabled={loading}
               >
-                {showPassword ? '👁️' : '👁️‍🗨️'}
+                {showPassword ? '🙈' : '👁️'}
               </button>
             </div>
             {errors.password && (
-              <p className="text-red-500 text-xs mt-1">{errors.password}</p>
+              <p className="text-red-600 text-xs mt-1.5 flex items-center gap-1">
+                <span>⚠</span> {errors.password}
+              </p>
             )}
           </div>
 
-          {/* Remember Me */}
-          <div className="flex items-center">
+          {/* Remember Me Checkbox */}
+          <label className="flex items-center gap-2.5 cursor-pointer">
             <input
               type="checkbox"
               name="rememberMe"
-              id="rememberMe"
               checked={formData.rememberMe}
               onChange={handleInputChange}
-              className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+              className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500"
               disabled={loading}
             />
-            <label htmlFor="rememberMe" className="ml-2 text-sm text-gray-700">
-              Remember me
-            </label>
-          </div>
+            <span className="text-sm text-gray-700 font-medium">Keep me signed in</span>
+          </label>
 
-          {/* Submit Button */}
+          {/* Login Button */}
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition disabled:bg-gray-400 disabled:cursor-not-allowed font-medium"
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 rounded-lg transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed mt-6"
           >
-            {loading ? 'Logging in...' : 'Login'}
+            {loading ? (
+              <span className="flex items-center justify-center gap-2">
+                <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                Signing in...
+              </span>
+            ) : (
+              'Sign In'
+            )}
           </button>
         </form>
 
-        {/* Forgot Password Link */}
-        <div className="text-center mt-4">
-          <Link
-            href="/auth/forgot-password"
-            className="text-blue-600 hover:text-blue-700 text-sm font-medium"
-          >
-            Forgot your password?
-          </Link>
+        {/* Divider */}
+        <div className="my-6 flex items-center gap-3">
+          <div className="flex-1 h-px bg-gray-200"></div>
+          <span className="text-xs text-gray-600 font-medium">NEW USER?</span>
+          <div className="flex-1 h-px bg-gray-200"></div>
         </div>
 
-        {/* Signup Link */}
-        <p className="text-center text-gray-600 text-sm mt-6">
-          Don&apos;t have an account?{' '}
-          <Link
-            href="/auth/signup"
-            className="text-blue-600 hover:text-blue-700 font-medium"
-          >
-            Sign up here
-          </Link>
-        </p>
+        {/* Signup CTA */}
+        <Link
+          href="/auth/signup"
+          className="w-full block text-center px-4 py-2.5 border-2 border-blue-600 text-blue-600 font-semibold rounded-lg hover:bg-blue-50 transition-colors"
+        >
+          Create Account
+        </Link>
+      </div>
+
+      {/* Trust Indicators */}
+      <div className="mt-6 flex items-center justify-center gap-4 text-xs text-gray-600">
+        <div className="flex items-center gap-1">
+          <span>🔒</span> Secure Login
+        </div>
+        <span>•</span>
+        <div className="flex items-center gap-1">
+          <span>📱</span> M-Pesa Enabled
+        </div>
       </div>
     </div>
   );

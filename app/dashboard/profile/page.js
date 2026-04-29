@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import DashboardLayout from '@/components/dashboard/DashboardLayout';
 import { validateField, validatePhone, normalizePhone } from '@/lib/validation';
 
 export default function ProfilePage() {
