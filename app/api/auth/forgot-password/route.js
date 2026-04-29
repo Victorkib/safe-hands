@@ -63,10 +63,10 @@ export async function POST(request) {
 
     console.log('[v0] Sending password reset email to:', email);
 
-    // Send password reset email
+    // Send password reset email (email, userName, resetLink)
     const emailResult = await sendPasswordResetEmail(
-      user.full_name || 'User',
       email,
+      user.full_name || 'User',
       resetLink,
     );
 
