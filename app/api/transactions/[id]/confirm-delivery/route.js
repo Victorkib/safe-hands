@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { mpesaClient } from '@/lib/mpesaClient';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -38,10 +39,13 @@ export async function POST(request, { params }) {
     const body = await request.json();
     const { confirmation_comment } = body;
 
-    // Get transaction
+    // Get transaction with seller details for payout
     const { data: transaction, error: transactionError } = await supabase
       .from('transactions')
-      .select('*')
+      .select(`
+        *,
+        seller:users!transactions_seller_id_fkey (id, phone_number, full_name)
+      `)
       .eq('id', id)
       .single();
 
@@ -96,37 +100,143 @@ export async function POST(request, { params }) {
       reason: `Buyer confirmed delivery: ${confirmation_comment || 'No comment'}`,
     });
 
-    // Update seller's stats
-    await supabase
-      .from('users')
-      .update({
-        total_transactions_completed: supabase.raw('total_transactions_completed + 1'),
-      })
-      .eq('id', transaction.seller_id);
+    // Update seller's stats using RPC or direct SQL
+    // Supabase JS client doesn't have .raw() - use .rpc() for incrementing
+    const { error: sellerStatsError } = await supabase.rpc('increment_user_completed_transactions', {
+      user_id: transaction.seller_id
+    });
+    
+    if (sellerStatsError) {
+      console.error('Failed to update seller stats:', sellerStatsError);
+      // Non-critical error, continue execution
+    }
 
     // Update buyer's stats
-    await supabase
-      .from('users')
-      .update({
-        total_transactions_completed: supabase.raw('total_transactions_completed + 1'),
-      })
-      .eq('id', transaction.buyer_id);
+    const { error: buyerStatsError } = await supabase.rpc('increment_user_completed_transactions', {
+      user_id: transaction.buyer_id
+    });
+    
+    if (buyerStatsError) {
+      console.error('Failed to update buyer stats:', buyerStatsError);
+      // Non-critical error, continue execution
+    }
 
     // Notify seller - funds released
     await supabase.from('notifications').insert({
       user_id: transaction.seller_id,
       title: 'Funds Released',
-      message: `Buyer confirmed delivery. Your funds of KES ${transaction.amount.toLocaleString()} have been released.`,
+      message: `Buyer confirmed delivery. Your funds of KES ${transaction.amount.toLocaleString()} are being transferred to your M-Pesa.`,
       type: 'funds_released',
       related_transaction_id: id,
     });
 
-    // TODO: Initiate B2C payment to seller's M-Pesa
-    // This would use mpesaClient.initiateB2C() to transfer funds to seller
+    // Initiate B2C payout to seller's M-Pesa
+    let payoutInitiated = false;
+    let payoutError = null;
+
+    if (transaction.seller?.phone_number) {
+      // Calculate payout amount (could deduct platform fee here)
+      const platformFeePercent = 2.5; // 2.5% platform fee
+      const platformFee = Math.ceil(transaction.amount * (platformFeePercent / 100));
+      const payoutAmount = transaction.amount - platformFee;
+
+      try {
+        const b2cResponse = await mpesaClient.initiateB2C({
+          phoneNumber: transaction.seller.phone_number,
+          amount: payoutAmount,
+          remarks: `Safe Hands Escrow payout for transaction ${id.slice(0, 8)}`,
+        });
+
+        if (b2cResponse.success) {
+          payoutInitiated = true;
+          
+          // Store the conversation ID for callback matching
+          const conversationId = b2cResponse.data?.OriginatorConversationID || b2cResponse.data?.ConversationID;
+          
+          await supabase
+            .from('transactions')
+            .update({
+              payout_ref: conversationId,
+              payout_amount: payoutAmount,
+              platform_fee: platformFee,
+              payout_status: 'pending',
+            })
+            .eq('id', id);
+
+          // Log payout initiation
+          await supabase.from('transaction_history').insert({
+            transaction_id: id,
+            old_status: 'released',
+            new_status: 'released',
+            changed_by: null,
+            reason: `B2C payout initiated. Amount: KES ${payoutAmount}, Fee: KES ${platformFee}`,
+          });
+        } else {
+          payoutError = b2cResponse.error;
+          console.error('B2C payout initiation failed:', payoutError);
+          
+          // Mark payout as failed
+          await supabase
+            .from('transactions')
+            .update({
+              payout_status: 'failed',
+              payout_error: payoutError,
+            })
+            .eq('id', id);
+        }
+      } catch (error) {
+        payoutError = error.message;
+        console.error('B2C payout error:', error);
+        
+        // Mark payout as failed
+        await supabase
+          .from('transactions')
+          .update({
+            payout_status: 'failed',
+            payout_error: payoutError,
+          })
+          .eq('id', id);
+      }
+    } else {
+      payoutError = 'Seller phone number not found';
+      console.error('Cannot initiate payout: seller phone number not found');
+      
+      // Mark payout as failed
+      await supabase
+        .from('transactions')
+        .update({
+          payout_status: 'failed',
+          payout_error: payoutError,
+        })
+        .eq('id', id);
+    }
+
+    // If payout failed, notify admin
+    if (!payoutInitiated) {
+      const { data: admins } = await supabase
+        .from('users')
+        .select('id')
+        .eq('role', 'admin');
+
+      if (admins && admins.length > 0) {
+        const adminNotifications = admins.map(admin => ({
+          user_id: admin.id,
+          title: 'Payout Failed - Action Required',
+          message: `B2C payout failed for transaction ${id.slice(0, 8)}. Error: ${payoutError}. Manual payout may be required.`,
+          type: 'payout_failed',
+          related_transaction_id: id,
+        }));
+
+        await supabase.from('notifications').insert(adminNotifications);
+      }
+    }
 
     return Response.json({
       success: true,
-      message: 'Delivery confirmed. Funds released to seller.',
+      message: payoutInitiated 
+        ? 'Delivery confirmed. Funds are being transferred to seller.' 
+        : 'Delivery confirmed. Payout is being processed manually.',
+      payoutInitiated,
     });
 
   } catch (error) {

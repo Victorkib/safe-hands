@@ -52,11 +52,11 @@ export async function POST(request) {
     const body = await request.json();
     const { seller_id, amount, description, seller_email } = body;
 
-    // Validate input
-    const validationError = validateTransactionForm(body);
-    if (validationError) {
+    // Validate input - validateTransactionForm returns null if valid, or errors object if invalid
+    const validationErrors = validateTransactionForm(body);
+    if (validationErrors) {
       return Response.json(
-        { error: validationError },
+        { error: 'Validation failed', details: validationErrors },
         { status: 400 }
       );
     }

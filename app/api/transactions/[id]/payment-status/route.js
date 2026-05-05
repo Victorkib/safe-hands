@@ -139,28 +139,46 @@ export async function GET(request, { params }) {
         message: 'Payment confirmed via status query',
       });
     } else if (resultCode === '1032') {
-      // Request cancelled by user
+      // Request cancelled by user - clear mpesa_ref for retry
+      await supabase
+        .from('transactions')
+        .update({ mpesa_ref: null })
+        .eq('id', id);
+        
       return Response.json({
         success: true,
         status: 'cancelled',
-        transaction,
-        message: 'Payment was cancelled',
+        transaction: { ...transaction, mpesa_ref: null },
+        message: 'Payment was cancelled. You can try again.',
+        canRetry: true,
       });
     } else if (resultCode === '1037') {
-      // Request timed out
+      // Request timed out - clear mpesa_ref for retry
+      await supabase
+        .from('transactions')
+        .update({ mpesa_ref: null })
+        .eq('id', id);
+        
       return Response.json({
         success: true,
         status: 'timeout',
-        transaction,
+        transaction: { ...transaction, mpesa_ref: null },
         message: 'Payment request timed out. Please try again.',
+        canRetry: true,
       });
     } else {
-      // Other error
+      // Other error - clear mpesa_ref for retry
+      await supabase
+        .from('transactions')
+        .update({ mpesa_ref: null })
+        .eq('id', id);
+        
       return Response.json({
         success: true,
         status: 'failed',
-        transaction,
+        transaction: { ...transaction, mpesa_ref: null },
         message: `Payment failed: ${mpesaResponse.data.ResultDesc}`,
+        canRetry: true,
       });
     }
 

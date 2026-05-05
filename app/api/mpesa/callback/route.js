@@ -64,7 +64,11 @@ export async function POST(request) {
       const transactionDate = CallbackMetadata.Item.find(item => item.Name === 'TransactionDate')?.Value;
       const phoneNumber = CallbackMetadata.Item.find(item => item.Name === 'PhoneNumber')?.Value;
 
-      // Update transaction
+      // Calculate auto-release date (3 days after payment for buyer protection)
+      // If buyer doesn't confirm or dispute within 3 days after delivery, funds auto-release
+      // Note: auto_release_date will be recalculated when seller marks as shipped
+      
+      // Update transaction - NOW set status to 'escrow' since payment is confirmed
       const { error: updateError } = await supabase
         .from('transactions')
         .update({
@@ -118,11 +122,13 @@ export async function POST(request) {
       });
 
     } else {
-      // Payment failed
+      // Payment failed - clear mpesa_ref so user can retry, but keep status as 'initiated'
+      // Common ResultCodes: 1032 = Request cancelled by user, 1037 = Timeout, 1 = Insufficient funds
       const { error: updateError } = await supabase
         .from('transactions')
         .update({
-          status: 'cancelled',
+          mpesa_ref: null, // Clear so user can retry
+          // Status stays as 'initiated' to allow retry
         })
         .eq('id', transaction.id);
 
@@ -133,26 +139,35 @@ export async function POST(request) {
       // Log to transaction history
       await supabase.from('transaction_history').insert({
         transaction_id: transaction.id,
-        old_status: 'initiated',
-        new_status: 'cancelled',
+        old_status: transaction.status,
+        new_status: transaction.status, // Status unchanged
         changed_by: null,
-        reason: `Payment failed: ${ResultDesc}`,
+        reason: `Payment failed: ${ResultDesc}. Transaction remains active for retry.`,
       });
 
-      // Notify buyer
+      // Notify buyer with appropriate message based on result code
+      let failureMessage = `Your payment failed: ${ResultDesc}. Please try again.`;
+      if (ResultCode === 1032) {
+        failureMessage = 'Payment was cancelled. You can try again when ready.';
+      } else if (ResultCode === 1037) {
+        failureMessage = 'Payment request timed out. Please try again.';
+      } else if (ResultCode === 1) {
+        failureMessage = 'Payment failed due to insufficient funds. Please try again.';
+      }
+
       await supabase.from('notifications').insert({
         user_id: transaction.buyer_id,
-        title: 'Payment Failed',
-        message: `Your payment failed: ${ResultDesc}. Please try again.`,
+        title: 'Payment Not Completed',
+        message: failureMessage,
         type: 'payment_failed',
         related_transaction_id: transaction.id,
       });
 
-      console.log('Payment failed for transaction:', transaction.id, 'Reason:', ResultDesc);
+      console.log('Payment failed for transaction:', transaction.id, 'ResultCode:', ResultCode, 'Reason:', ResultDesc);
 
       return Response.json({
-        ResultCode: 1,
-        ResultDesc: 'Payment failed',
+        ResultCode: 0, // Return 0 to acknowledge receipt
+        ResultDesc: 'Payment failure recorded',
       });
     }
 

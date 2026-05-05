@@ -78,20 +78,63 @@ export async function POST(request, { params }) {
       );
     }
 
-    // Check transaction status
-    if (transaction.status !== 'initiated') {
+    // Check transaction status - allow initiated or cancelled (for retry)
+    if (transaction.status !== 'initiated' && transaction.status !== 'cancelled') {
       return Response.json(
         { error: `Cannot pay for transaction with status: ${transaction.status}` },
         { status: 400 }
       );
     }
 
-    // Check if payment already initiated
-    if (transaction.mpesa_ref) {
+    // Check if payment already confirmed (in escrow)
+    if (transaction.payment_confirmed_at) {
       return Response.json(
-        { error: 'Payment already initiated' },
+        { error: 'Payment has already been confirmed' },
         { status: 400 }
       );
+    }
+    
+    // Get retry flag from request body (optional)
+    let isRetry = false;
+    try {
+      const body = await request.json();
+      isRetry = body?.retry === true;
+    } catch {
+      // No body or not JSON - that's fine
+    }
+
+    // If there's an existing mpesa_ref and not a retry, check if we should allow retry
+    if (transaction.mpesa_ref && !isRetry) {
+      // Check how old the payment request is (allow retry after 2 minutes)
+      const lastUpdate = new Date(transaction.updated_at);
+      const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000);
+      
+      if (lastUpdate > twoMinutesAgo) {
+        return Response.json(
+          { 
+            error: 'Payment already in progress. Please wait for the M-Pesa prompt or try again in 2 minutes.',
+            canRetry: true,
+            retryAfter: new Date(lastUpdate.getTime() + 2 * 60 * 1000).toISOString()
+          },
+          { status: 400 }
+        );
+      }
+    }
+    
+    // If retrying, reset cancelled status back to initiated
+    if (transaction.status === 'cancelled') {
+      await supabase
+        .from('transactions')
+        .update({ status: 'initiated' })
+        .eq('id', id);
+        
+      await supabase.from('transaction_history').insert({
+        transaction_id: id,
+        old_status: 'cancelled',
+        new_status: 'initiated',
+        changed_by: user.id,
+        reason: 'Transaction reactivated for payment retry',
+      });
     }
 
     // Initiate STK Push
@@ -114,12 +157,14 @@ export async function POST(request, { params }) {
     const checkoutRequestID = mpesaResponse.data.CheckoutRequestID;
     const merchantRequestID = mpesaResponse.data.MerchantRequestID;
 
-    // Update transaction with M-Pesa reference
+    // Update transaction with M-Pesa checkout request ID
+    // IMPORTANT: Status stays as 'initiated' until callback confirms payment
+    // We use mpesa_ref to store the checkout request ID for status polling
     const { error: updateError } = await supabase
       .from('transactions')
       .update({
         mpesa_ref: checkoutRequestID,
-        status: 'escrow', // Will be updated to 'escrow' when payment is confirmed via callback
+        // Status stays 'initiated' - will be set to 'escrow' only when callback confirms payment
       })
       .eq('id', id);
 
@@ -131,13 +176,13 @@ export async function POST(request, { params }) {
       );
     }
 
-    // Log to transaction history
+    // Log to transaction history - payment initiated, awaiting confirmation
     await supabase.from('transaction_history').insert({
       transaction_id: id,
       old_status: 'initiated',
-      new_status: 'escrow',
+      new_status: 'initiated', // Status unchanged, just recording STK push was sent
       changed_by: user.id,
-      reason: 'M-Pesa STK Push initiated',
+      reason: `M-Pesa STK Push initiated. CheckoutRequestID: ${checkoutRequestID}`,
     });
 
     // Notify seller

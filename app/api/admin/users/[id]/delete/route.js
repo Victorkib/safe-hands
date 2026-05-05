@@ -1,14 +1,25 @@
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
-import { cookies } from 'next/headers';
+import { createClient } from '@supabase/supabase-js';
+
+// Lazy initialization to avoid build-time errors
+const getSupabase = () => createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
 
 export async function DELETE(request, { params }) {
-  const cookieStore = await cookies();
-  const supabase = createRouteHandlerClient({ cookies: () => cookieStore });
-
+  const supabase = getSupabase();
   try {
+    // Get authorization header
+    const authHeader = request.headers.get('authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return Response.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const token = authHeader.substring(7);
+
     // Verify admin
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !user) {
       return Response.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -22,19 +33,27 @@ export async function DELETE(request, { params }) {
       return Response.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    const { id } = params;
+    const { id } = await params;
 
-    // Delete user
+    // Can't delete yourself
+    if (id === user.id) {
+      return Response.json({ error: 'Cannot delete yourself' }, { status: 400 });
+    }
+
+    // Soft delete - deactivate user instead of hard delete
     const { error } = await supabase
       .from('users')
-      .delete()
+      .update({ 
+        is_active: false,
+        updated_at: new Date().toISOString()
+      })
       .eq('id', id);
 
     if (error) throw error;
 
-    return Response.json({ success: true, message: 'User deleted successfully' });
+    return Response.json({ success: true, message: 'User deactivated successfully' });
   } catch (error) {
-    console.error('[v0] Delete user error:', error);
+    console.error('Delete user error:', error);
     return Response.json(
       { error: error.message || 'Failed to delete user' },
       { status: 500 }

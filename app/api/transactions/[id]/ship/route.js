@@ -68,12 +68,17 @@ export async function POST(request, { params }) {
       );
     }
 
-    // Update transaction
+    // Set auto-release date (3 days from now for buyer to confirm or dispute)
+    const autoReleaseDate = new Date();
+    autoReleaseDate.setDate(autoReleaseDate.getDate() + 3);
+
+    // Update transaction in single query
     const { error: updateError } = await supabase
       .from('transactions')
       .update({
         delivery_proof_url,
         status: 'delivered', // Item shipped, waiting for buyer confirmation
+        auto_release_date: autoReleaseDate.toISOString(),
       })
       .eq('id', id);
 
@@ -91,19 +96,8 @@ export async function POST(request, { params }) {
       old_status: 'escrow',
       new_status: 'delivered',
       changed_by: user.id,
-      reason: `Item shipped. Tracking: ${tracking_number || 'N/A'}`,
+      reason: `Item shipped. Tracking: ${tracking_number || 'N/A'}. Auto-release: ${autoReleaseDate.toISOString()}`,
     });
-
-    // Set auto-release date (3 days from now)
-    const autoReleaseDate = new Date();
-    autoReleaseDate.setDate(autoReleaseDate.getDate() + 3);
-    
-    await supabase
-      .from('transactions')
-      .update({
-        auto_release_date: autoReleaseDate.toISOString(),
-      })
-      .eq('id', id);
 
     // Notify buyer
     await supabase.from('notifications').insert({

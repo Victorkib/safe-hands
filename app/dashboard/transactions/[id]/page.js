@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
+import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
 
 export default function TransactionDetail() {
@@ -22,6 +23,12 @@ export default function TransactionDetail() {
   const [confirmationComment, setConfirmationComment] = useState('');
   const [disputeReason, setDisputeReason] = useState('');
   const [disputeDescription, setDisputeDescription] = useState('');
+  
+  // Payment polling state
+  const [isPollingPayment, setIsPollingPayment] = useState(false);
+  const [paymentStatus, setPaymentStatus] = useState(null);
+  const [pollCount, setPollCount] = useState(0);
+  const MAX_POLLS = 12; // Poll for max 60 seconds (12 * 5 seconds)
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -73,8 +80,73 @@ export default function TransactionDetail() {
     }
   };
 
+  // Poll for payment status
+  const pollPaymentStatus = useCallback(async () => {
+    if (!user) return;
+    
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch(`/api/transactions/${id}/payment-status`, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        setPaymentStatus(result.status);
+        
+        if (result.status === 'confirmed') {
+          // Payment successful - stop polling and refresh
+          setIsPollingPayment(false);
+          setPollCount(0);
+          fetchTransaction(user.id);
+          return true;
+        } else if (result.status === 'cancelled' || result.status === 'failed' || result.status === 'timeout') {
+          // Payment failed - stop polling
+          setIsPollingPayment(false);
+          setPollCount(0);
+          fetchTransaction(user.id);
+          return true;
+        }
+      }
+      return false;
+    } catch (error) {
+      console.error('Payment status poll error:', error);
+      return false;
+    }
+  }, [id, user]);
+
+  // Payment polling effect
+  useEffect(() => {
+    let pollInterval;
+    
+    if (isPollingPayment && pollCount < MAX_POLLS) {
+      pollInterval = setInterval(async () => {
+        const done = await pollPaymentStatus();
+        if (!done) {
+          setPollCount(prev => {
+            if (prev + 1 >= MAX_POLLS) {
+              setIsPollingPayment(false);
+              setPaymentStatus('timeout');
+              return 0;
+            }
+            return prev + 1;
+          });
+        }
+      }, 5000); // Poll every 5 seconds
+    }
+    
+    return () => {
+      if (pollInterval) clearInterval(pollInterval);
+    };
+  }, [isPollingPayment, pollCount, pollPaymentStatus]);
+
   const initiatePayment = async () => {
     setActionLoading(true);
+    setPaymentStatus(null);
+    
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const response = await fetch(`/api/transactions/${id}/pay`, {
@@ -87,18 +159,29 @@ export default function TransactionDetail() {
       const result = await response.json();
       
       if (result.success) {
-        alert(result.message);
-        setShowPaymentModal(false);
-        fetchTransaction(user.id);
+        // Start polling for payment confirmation
+        setIsPollingPayment(true);
+        setPollCount(0);
+        setPaymentStatus('pending');
+        // Don't close modal yet - show polling UI
       } else {
-        alert(result.error || 'Payment failed');
+        setPaymentStatus('failed');
+        setShowPaymentModal(false);
       }
     } catch (error) {
       console.error('Payment error:', error);
-      alert('Failed to initiate payment');
+      setPaymentStatus('error');
     } finally {
       setActionLoading(false);
     }
+  };
+  
+  const cancelPaymentPolling = () => {
+    setIsPollingPayment(false);
+    setPollCount(0);
+    setPaymentStatus(null);
+    setShowPaymentModal(false);
+    fetchTransaction(user.id);
   };
 
   const markAsShipped = async () => {
@@ -312,7 +395,7 @@ export default function TransactionDetail() {
       </div>
 
       {/* Delivery Information */}
-      {transaction.status === 'delivered' || transaction.status === 'released' && (
+      {(transaction.status === 'delivered' || transaction.status === 'released') && (
         <div className="bg-white rounded-lg shadow p-6 mb-6">
           <h2 className="text-xl font-bold text-gray-900 mb-4">Delivery Information</h2>
           <div className="grid grid-cols-2 gap-4">
@@ -346,13 +429,23 @@ export default function TransactionDetail() {
       <div className="bg-white rounded-lg shadow p-6">
         <h2 className="text-xl font-bold text-gray-900 mb-4">Actions</h2>
         
-        {isBuyer && transaction.status === 'initiated' && (
+        {/* Show pay button for initiated status OR cancelled (for retry) */}
+        {isBuyer && (transaction.status === 'initiated' || transaction.status === 'cancelled') && (
           <button
             onClick={() => setShowPaymentModal(true)}
             className="w-full bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition font-medium mb-2"
           >
-            Pay with M-Pesa
+            {transaction.status === 'cancelled' ? 'Retry Payment' : 'Pay with M-Pesa'}
           </button>
+        )}
+        
+        {/* Show message if payment was cancelled */}
+        {transaction.status === 'cancelled' && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
+            <p className="text-yellow-800 text-sm">
+              Previous payment was not completed. You can retry the payment above.
+            </p>
+          </div>
         )}
 
         {isSeller && transaction.status === 'escrow' && (
@@ -373,7 +466,9 @@ export default function TransactionDetail() {
           </button>
         )}
 
-        {isBuyer && transaction.status === 'escrow' && (
+        {/* Allow disputes during escrow (after payment, before delivery) or delivered (item issues) */}
+        {/* Buyer can dispute: escrow (seller not shipping) or delivered (wrong item) */}
+        {isBuyer && (transaction.status === 'escrow' || transaction.status === 'delivered') && (
           <button
             onClick={() => setShowDisputeModal(true)}
             className="w-full bg-red-600 text-white px-6 py-3 rounded-lg hover:bg-red-700 transition font-medium mb-2"
@@ -382,6 +477,7 @@ export default function TransactionDetail() {
           </button>
         )}
 
+        {/* Seller can dispute during escrow (buyer issues) */}
         {isSeller && transaction.status === 'escrow' && (
           <button
             onClick={() => setShowDisputeModal(true)}
@@ -400,27 +496,114 @@ export default function TransactionDetail() {
 
       {/* Payment Modal */}
       {showPaymentModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-            <h3 className="text-xl font-bold mb-4">Confirm Payment</h3>
-            <p className="text-gray-600 mb-4">
-              You will receive an M-Pesa prompt on your phone to confirm payment of KES {transaction.amount.toLocaleString()}.
-            </p>
-            <div className="flex gap-2">
-              <button
-                onClick={initiatePayment}
-                disabled={actionLoading}
-                className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"
-              >
-                {actionLoading ? 'Processing...' : 'Confirm'}
-              </button>
-              <button
-                onClick={() => setShowPaymentModal(false)}
-                className="flex-1 bg-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-400 transition"
-              >
-                Cancel
-              </button>
-            </div>
+            <h3 className="text-xl font-bold mb-4">
+              {isPollingPayment ? 'Awaiting Payment' : 'Confirm Payment'}
+            </h3>
+            
+            {/* Initial state - before payment initiated */}
+            {!isPollingPayment && !paymentStatus && (
+              <>
+                <p className="text-gray-600 mb-4">
+                  You will receive an M-Pesa prompt on your phone to confirm payment of KES {transaction.amount.toLocaleString()}.
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={initiatePayment}
+                    disabled={actionLoading}
+                    className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"
+                  >
+                    {actionLoading ? 'Sending...' : 'Pay Now'}
+                  </button>
+                  <button
+                    onClick={() => setShowPaymentModal(false)}
+                    className="flex-1 bg-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-400 transition"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </>
+            )}
+            
+            {/* Polling state - waiting for M-Pesa confirmation */}
+            {isPollingPayment && (
+              <div className="text-center">
+                <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                <p className="text-gray-700 font-medium mb-2">Check your phone for M-Pesa prompt</p>
+                <p className="text-gray-500 text-sm mb-4">
+                  Enter your M-Pesa PIN to complete payment of KES {transaction.amount.toLocaleString()}
+                </p>
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                  <p className="text-blue-800 text-sm">
+                    Checking payment status... ({pollCount + 1}/{MAX_POLLS})
+                  </p>
+                </div>
+                <button
+                  onClick={cancelPaymentPolling}
+                  className="text-gray-500 hover:text-gray-700 text-sm underline"
+                >
+                  Cancel and close
+                </button>
+              </div>
+            )}
+            
+            {/* Payment confirmed */}
+            {paymentStatus === 'confirmed' && !isPollingPayment && (
+              <div className="text-center">
+                <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+                <p className="text-green-700 font-medium mb-2">Payment Successful!</p>
+                <p className="text-gray-500 text-sm mb-4">
+                  Your funds are now in escrow. The seller will be notified.
+                </p>
+                <button
+                  onClick={cancelPaymentPolling}
+                  className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition"
+                >
+                  Done
+                </button>
+              </div>
+            )}
+            
+            {/* Payment failed/cancelled/timeout */}
+            {(paymentStatus === 'failed' || paymentStatus === 'cancelled' || paymentStatus === 'timeout' || paymentStatus === 'error') && !isPollingPayment && (
+              <div className="text-center">
+                <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </div>
+                <p className="text-red-700 font-medium mb-2">
+                  {paymentStatus === 'timeout' ? 'Payment Timed Out' : 
+                   paymentStatus === 'cancelled' ? 'Payment Cancelled' : 'Payment Failed'}
+                </p>
+                <p className="text-gray-500 text-sm mb-4">
+                  {paymentStatus === 'timeout' 
+                    ? 'The payment request expired. Please try again.' 
+                    : 'Please try again or contact support if the issue persists.'}
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      setPaymentStatus(null);
+                    }}
+                    className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"
+                  >
+                    Try Again
+                  </button>
+                  <button
+                    onClick={cancelPaymentPolling}
+                    className="flex-1 bg-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-400 transition"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
