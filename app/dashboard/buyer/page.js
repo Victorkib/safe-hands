@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
+import { Spinner } from '@/components/ui/spinner';
+import { Skeleton } from '@/components/ui/skeleton';
 
 export default function BuyerDashboard() {
   const [user, setUser] = useState(null);
@@ -15,14 +17,17 @@ export default function BuyerDashboard() {
   });
   const [filter, setFilter] = useState('all');
   const [loading, setLoading] = useState(true);
+  const [loadingStage, setLoadingStage] = useState('initial');
 
   useEffect(() => {
     const fetchTransactions = async () => {
       try {
+        setLoadingStage('auth');
         const { data: { user: authUser } } = await supabase.auth.getUser();
         if (!authUser) return;
         
         setUser(authUser);
+        setLoadingStage('transactions');
 
         const { data } = await supabase
           .from('transactions')
@@ -35,13 +40,15 @@ export default function BuyerDashboard() {
           .order('created_at', { ascending: false });
 
         if (data) {
+          setLoadingStage('processing');
           setTransactions(data);
           calculateStats(data);
         }
       } catch (error) {
         console.error('Error fetching transactions:', error);
       } finally {
-        setLoading(false);
+        setLoadingStage('complete');
+        setTimeout(() => setLoading(false), 300);
       }
     };
 
@@ -124,10 +131,115 @@ export default function BuyerDashboard() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center">
-          <div className="spinner w-8 h-8 border-2 border-primary border-t-transparent mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Loading transactions...</p>
+      <div className="space-y-8 animate-in fade-in duration-500">
+        {/* Loading Header */}
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-3">
+            <Spinner className="size-6 text-primary" />
+            <h1 className="text-3xl font-bold text-gray-900">Loading Dashboard</h1>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="h-2 bg-primary rounded-full w-32 animate-pulse"></div>
+            <span className="text-sm text-muted-foreground">
+              {loadingStage === 'auth' && 'Authenticating...'}
+              {loadingStage === 'transactions' && 'Fetching transactions...'}
+              {loadingStage === 'processing' && 'Processing data...'}
+              {loadingStage === 'complete' && 'Almost ready...'}
+            </span>
+          </div>
+        </div>
+
+        {/* Stats Cards Skeleton */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
+              <div className="flex items-center justify-between">
+                <div className="space-y-2 flex-1">
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-8 w-12" />
+                </div>
+                <Skeleton className="w-14 h-14 rounded-lg" />
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Quick Actions Skeleton */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          {[1, 2].map((i) => (
+            <div key={i} className="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
+              <div className="flex items-center gap-4">
+                <Skeleton className="w-14 h-14 rounded-lg" />
+                <div className="space-y-2 flex-1">
+                  <Skeleton className="h-6 w-32" />
+                  <Skeleton className="h-4 w-48" />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Transactions Table Skeleton */}
+        <div className="bg-white border border-gray-200 rounded-xl shadow-sm">
+          <div className="p-6 border-b border-gray-200">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <Skeleton className="h-6 w-40" />
+              <Skeleton className="h-10 w-32" />
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-200">
+                  <th className="text-left px-6 py-4 text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                    <Skeleton className="h-4 w-20" />
+                  </th>
+                  <th className="text-left px-6 py-4 text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                    <Skeleton className="h-4 w-16" />
+                  </th>
+                  <th className="text-left px-6 py-4 text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                    <Skeleton className="h-4 w-12" />
+                  </th>
+                  <th className="text-left px-6 py-4 text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                    <Skeleton className="h-4 w-14" />
+                  </th>
+                  <th className="text-left px-6 py-4 text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                    <Skeleton className="h-4 w-10" />
+                  </th>
+                  <th className="text-left px-6 py-4 text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                    <Skeleton className="h-4 w-16" />
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {[1, 2, 3, 4, 5].map((i) => (
+                  <tr key={i} className="border-b border-gray-200">
+                    <td className="px-6 py-4">
+                      <Skeleton className="h-4 w-16" />
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="space-y-1">
+                        <Skeleton className="h-4 w-24" />
+                        <Skeleton className="h-3 w-32" />
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <Skeleton className="h-4 w-20" />
+                    </td>
+                    <td className="px-6 py-4">
+                      <Skeleton className="h-6 w-20 rounded-full" />
+                    </td>
+                    <td className="px-6 py-4">
+                      <Skeleton className="h-4 w-16" />
+                    </td>
+                    <td className="px-6 py-4">
+                      <Skeleton className="h-4 w-24" />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     );
