@@ -26,6 +26,54 @@ export default function TransactionDetail() {
   const [sellerRequest, setSellerRequest] = useState(null);
   const [sellerMessage, setSellerMessage] = useState('');
   const [proposedAmount, setProposedAmount] = useState('');
+  
+  // Evidence-related state
+  const [evidence, setEvidence] = useState([]);
+  const [courier, setCourier] = useState('');
+  const [shippingNotes, setShippingNotes] = useState('');
+  const [conditionRating, setConditionRating] = useState(5);
+  const [itemMatchesDescription, setItemMatchesDescription] = useState(true);
+  
+  // Dispute window countdown
+  const [timeRemaining, setTimeRemaining] = useState(null);
+
+  // Countdown timer for dispute window
+  useEffect(() => {
+    if (!transaction?.auto_release_date || transaction.status !== 'delivered') {
+      setTimeRemaining(null);
+      return;
+    }
+
+    const calculateTimeRemaining = () => {
+      const now = new Date().getTime();
+      const releaseTime = new Date(transaction.auto_release_date).getTime();
+      const diff = releaseTime - now;
+
+      if (diff <= 0) {
+        setTimeRemaining({ expired: true, text: 'Expired', hours: 0, minutes: 0, seconds: 0 });
+        return;
+      }
+
+      const hours = Math.floor(diff / (1000 * 60 * 60));
+      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+      setTimeRemaining({
+        expired: false,
+        hours,
+        minutes,
+        seconds,
+        text: `${hours}h ${minutes}m ${seconds}s`,
+        isUrgent: hours < 24,
+        isCritical: hours < 6,
+      });
+    };
+
+    calculateTimeRemaining();
+    const interval = setInterval(calculateTimeRemaining, 1000);
+
+    return () => clearInterval(interval);
+  }, [transaction?.auto_release_date, transaction?.status]);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -79,11 +127,34 @@ export default function TransactionDetail() {
         .maybeSingle();
 
       setSellerRequest(requestData || null);
+
+      // Fetch evidence
+      fetchEvidence();
     } catch (error) {
       console.error('Error fetching transaction:', error);
       setError('Transaction not found');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchEvidence = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const response = await fetch(`/api/transactions/${id}/evidence`, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+      });
+
+      const result = await response.json();
+      if (result.success) {
+        setEvidence(result.evidence || []);
+      }
+    } catch (error) {
+      console.error('Error fetching evidence:', error);
     }
   };
 
@@ -127,6 +198,8 @@ export default function TransactionDetail() {
         },
         body: JSON.stringify({
           tracking_number: trackingNumber || null,
+          courier: courier || null,
+          notes: shippingNotes || null,
           delivery_proof_url: '',
         }),
       });
@@ -136,6 +209,9 @@ export default function TransactionDetail() {
       if (result.success) {
         alert(result.message);
         setShowShippingModal(false);
+        setTrackingNumber('');
+        setCourier('');
+        setShippingNotes('');
         fetchTransaction(user.id);
       } else {
         alert(result.error || 'Failed to mark as shipped');
@@ -160,6 +236,8 @@ export default function TransactionDetail() {
         },
         body: JSON.stringify({
           confirmation_comment: confirmationComment,
+          condition_rating: conditionRating,
+          item_matches_description: itemMatchesDescription,
         }),
       });
 
@@ -168,6 +246,9 @@ export default function TransactionDetail() {
       if (result.success) {
         alert(result.message);
         setShowConfirmModal(false);
+        setConfirmationComment('');
+        setConditionRating(5);
+        setItemMatchesDescription(true);
         fetchTransaction(user.id);
       } else {
         alert(result.error || 'Failed to confirm delivery');
@@ -319,6 +400,112 @@ export default function TransactionDetail() {
 
   return (
     <>
+      {/* Dispute Window Banner */}
+      {transaction.status === 'delivered' && timeRemaining && !timeRemaining.expired && (
+        <div className={`rounded-lg shadow p-4 mb-6 ${
+          timeRemaining.isCritical 
+            ? 'bg-red-50 border-2 border-red-400' 
+            : timeRemaining.isUrgent 
+              ? 'bg-orange-50 border-2 border-orange-400'
+              : 'bg-blue-50 border-2 border-blue-400'
+        }`}>
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div className="flex items-center gap-3">
+              <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
+                timeRemaining.isCritical 
+                  ? 'bg-red-100 text-red-600' 
+                  : timeRemaining.isUrgent 
+                    ? 'bg-orange-100 text-orange-600'
+                    : 'bg-blue-100 text-blue-600'
+              }`}>
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div>
+                <h3 className={`font-bold ${
+                  timeRemaining.isCritical 
+                    ? 'text-red-800' 
+                    : timeRemaining.isUrgent 
+                      ? 'text-orange-800'
+                      : 'text-blue-800'
+                }`}>
+                  {timeRemaining.isCritical 
+                    ? 'URGENT: Dispute Window Closing Soon!' 
+                    : timeRemaining.isUrgent 
+                      ? 'Dispute Window Closing in 24h'
+                      : 'Dispute Window Active'}
+                </h3>
+                <p className={`text-sm ${
+                  timeRemaining.isCritical 
+                    ? 'text-red-700' 
+                    : timeRemaining.isUrgent 
+                      ? 'text-orange-700'
+                      : 'text-blue-700'
+                }`}>
+                  {isBuyer 
+                    ? 'Confirm delivery or raise a dispute before funds are automatically released.' 
+                    : 'Buyer has until the timer expires to confirm or dispute.'}
+                </p>
+              </div>
+            </div>
+            <div className="text-center">
+              <div className={`text-2xl font-mono font-bold ${
+                timeRemaining.isCritical 
+                  ? 'text-red-600' 
+                  : timeRemaining.isUrgent 
+                    ? 'text-orange-600'
+                    : 'text-blue-600'
+              }`}>
+                {String(timeRemaining.hours).padStart(2, '0')}:
+                {String(timeRemaining.minutes).padStart(2, '0')}:
+                {String(timeRemaining.seconds).padStart(2, '0')}
+              </div>
+              <p className="text-xs text-gray-600 uppercase">Time Remaining</p>
+            </div>
+          </div>
+          {isBuyer && (
+            <div className="mt-4 flex gap-2 flex-wrap">
+              <button
+                onClick={() => setShowConfirmModal(true)}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-sm font-medium"
+              >
+                Confirm Delivery
+              </button>
+              <button
+                onClick={() => setShowDisputeModal(true)}
+                className={`px-4 py-2 rounded-lg transition text-sm font-medium ${
+                  timeRemaining.isCritical 
+                    ? 'bg-red-600 text-white hover:bg-red-700 animate-pulse' 
+                    : 'bg-red-100 text-red-700 hover:bg-red-200'
+                }`}
+              >
+                Raise Dispute
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Expired Dispute Window Notice */}
+      {transaction.status === 'delivered' && timeRemaining?.expired && (
+        <div className="bg-gray-100 border-2 border-gray-300 rounded-lg shadow p-4 mb-6">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-gray-200 text-gray-600 flex items-center justify-center">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <div>
+              <h3 className="font-bold text-gray-800">Dispute Window Expired</h3>
+              <p className="text-sm text-gray-600">
+                Funds will be released to the seller shortly via automatic processing.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white rounded-lg shadow p-6 mb-6">
         <div className="flex justify-between items-start mb-4">
           <div>
@@ -386,10 +573,18 @@ export default function TransactionDetail() {
       </div>
 
       {/* Delivery Information */}
-      {transaction.status === 'delivered' || transaction.status === 'released' && (
+      {(transaction.status === 'delivered' || transaction.status === 'released') && (
         <div className="bg-white rounded-lg shadow p-6 mb-6">
           <h2 className="text-xl font-bold text-gray-900 mb-4">Delivery Information</h2>
           <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-sm text-gray-600">Shipped At</p>
+              <p className="text-gray-900">
+                {transaction.shipped_at 
+                  ? new Date(transaction.shipped_at).toLocaleString() 
+                  : 'N/A'}
+              </p>
+            </div>
             <div>
               <p className="text-sm text-gray-600">Delivery Confirmed At</p>
               <p className="text-gray-900">
@@ -398,8 +593,20 @@ export default function TransactionDetail() {
                   : 'Pending'}
               </p>
             </div>
-            {transaction.auto_release_date && (
+            {transaction.tracking_number && (
               <div>
+                <p className="text-sm text-gray-600">Tracking Number</p>
+                <p className="text-gray-900 font-mono">{transaction.tracking_number}</p>
+              </div>
+            )}
+            {transaction.courier && (
+              <div>
+                <p className="text-sm text-gray-600">Courier</p>
+                <p className="text-gray-900">{transaction.courier}</p>
+              </div>
+            )}
+            {transaction.auto_release_date && transaction.status === 'delivered' && (
+              <div className="col-span-2">
                 <p className="text-sm text-gray-600">Auto-Release Date</p>
                 <p className="text-gray-900">
                   {new Date(transaction.auto_release_date).toLocaleString()}
@@ -409,10 +616,82 @@ export default function TransactionDetail() {
           </div>
           {transaction.buyer_confirmation && (
             <div className="mt-4">
-              <p className="text-sm text-gray-600">Buyer's Confirmation</p>
+              <p className="text-sm text-gray-600">Buyer&apos;s Confirmation</p>
               <p className="text-gray-900">{transaction.buyer_confirmation}</p>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Evidence Timeline */}
+      {evidence.length > 0 && (
+        <div className="bg-white rounded-lg shadow p-6 mb-6">
+          <h2 className="text-xl font-bold text-gray-900 mb-4">Evidence Timeline</h2>
+          <div className="space-y-4">
+            {evidence.map((item) => (
+              <div 
+                key={item.id} 
+                className={`border-l-4 pl-4 py-2 ${
+                  item.submission_type.startsWith('seller') 
+                    ? 'border-blue-500 bg-blue-50' 
+                    : 'border-green-500 bg-green-50'
+                } rounded-r-lg`}
+              >
+                <div className="flex justify-between items-start">
+                  <div>
+                    <p className="font-medium text-gray-900">
+                      {item.submission_type === 'seller_ship' && 'Seller Shipped Item'}
+                      {item.submission_type === 'buyer_receive' && 'Buyer Confirmed Delivery'}
+                      {item.submission_type === 'seller_additional' && 'Seller Additional Evidence'}
+                      {item.submission_type === 'buyer_additional' && 'Buyer Additional Evidence'}
+                    </p>
+                    <p className="text-sm text-gray-600">
+                      By {item.submitter?.full_name || 'Unknown'} on {new Date(item.submitted_at).toLocaleString()}
+                    </p>
+                  </div>
+                  {item.condition_rating && (
+                    <span className="bg-yellow-100 text-yellow-800 px-2 py-1 rounded text-sm font-medium">
+                      {item.condition_rating}/5 Stars
+                    </span>
+                  )}
+                </div>
+                {item.tracking_number && (
+                  <p className="text-sm text-gray-700 mt-1">
+                    <span className="font-medium">Tracking:</span> {item.tracking_number}
+                    {item.courier && ` (${item.courier})`}
+                  </p>
+                )}
+                {item.notes && (
+                  <p className="text-sm text-gray-700 mt-1">
+                    <span className="font-medium">Notes:</span> {item.notes}
+                  </p>
+                )}
+                {item.item_matches_description !== null && (
+                  <p className="text-sm mt-1">
+                    <span className="font-medium">Item matches description:</span>{' '}
+                    <span className={item.item_matches_description ? 'text-green-600' : 'text-red-600'}>
+                      {item.item_matches_description ? 'Yes' : 'No'}
+                    </span>
+                  </p>
+                )}
+                {item.photos && item.photos.length > 0 && (
+                  <div className="mt-2 flex gap-2 flex-wrap">
+                    {item.photos.map((photo, idx) => (
+                      <a 
+                        key={idx} 
+                        href={photo} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:text-blue-800 text-sm underline"
+                      >
+                        Photo {idx + 1}
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -571,22 +850,60 @@ export default function TransactionDetail() {
 
       {/* Shipping Modal */}
       {showShippingModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
             <h3 className="text-xl font-bold mb-4">Mark as Shipped</h3>
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Tracking Number (optional)
-              </label>
-              <input
-                type="text"
-                value={trackingNumber}
-                onChange={(e) => setTrackingNumber(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Enter tracking number"
-              />
+            <p className="text-sm text-gray-600 mb-4">
+              Provide shipping details to help the buyer track their order.
+            </p>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Tracking Number (optional)
+                </label>
+                <input
+                  type="text"
+                  value={trackingNumber}
+                  onChange={(e) => setTrackingNumber(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Enter tracking number"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Courier / Delivery Service (optional)
+                </label>
+                <select
+                  value={courier}
+                  onChange={(e) => setCourier(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="">Select courier</option>
+                  <option value="G4S Kenya">G4S Kenya</option>
+                  <option value="Wells Fargo">Wells Fargo</option>
+                  <option value="Sendy">Sendy</option>
+                  <option value="Fargo Courier">Fargo Courier</option>
+                  <option value="Posta Kenya">Posta Kenya</option>
+                  <option value="DHL">DHL</option>
+                  <option value="FedEx">FedEx</option>
+                  <option value="Personal Delivery">Personal Delivery</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Shipping Notes (optional)
+                </label>
+                <textarea
+                  value={shippingNotes}
+                  onChange={(e) => setShippingNotes(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  rows="3"
+                  placeholder="Any additional details about the shipment..."
+                />
+              </div>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 mt-6">
               <button
                 onClick={markAsShipped}
                 disabled={actionLoading}
@@ -595,7 +912,12 @@ export default function TransactionDetail() {
                 {actionLoading ? 'Processing...' : 'Confirm Shipment'}
               </button>
               <button
-                onClick={() => setShowShippingModal(false)}
+                onClick={() => {
+                  setShowShippingModal(false);
+                  setTrackingNumber('');
+                  setCourier('');
+                  setShippingNotes('');
+                }}
                 className="flex-1 bg-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-400 transition"
               >
                 Cancel
@@ -607,25 +929,70 @@ export default function TransactionDetail() {
 
       {/* Delivery Confirmation Modal */}
       {showConfirmModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
             <h3 className="text-xl font-bold mb-4">Confirm Delivery</h3>
-            <p className="text-gray-600 mb-4">
-              Confirming delivery will release the funds to the seller. This action cannot be undone.
-            </p>
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Confirmation Comment (optional)
-              </label>
-              <textarea
-                value={confirmationComment}
-                onChange={(e) => setConfirmationComment(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                rows="3"
-                placeholder="Add any comments about the delivery"
-              />
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
+              <p className="text-yellow-800 text-sm">
+                Confirming delivery will release the funds to the seller. This action cannot be undone. Only confirm if you have received the item and are satisfied.
+              </p>
             </div>
-            <div className="flex gap-2">
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Item Condition Rating
+                </label>
+                <div className="flex gap-2">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button
+                      key={star}
+                      type="button"
+                      onClick={() => setConditionRating(star)}
+                      className={`w-10 h-10 rounded-full border-2 font-bold transition ${
+                        star <= conditionRating
+                          ? 'bg-yellow-400 border-yellow-500 text-white'
+                          : 'bg-gray-100 border-gray-300 text-gray-500 hover:bg-gray-200'
+                      }`}
+                    >
+                      {star}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-sm text-gray-500 mt-1">
+                  {conditionRating === 5 && 'Excellent - As described'}
+                  {conditionRating === 4 && 'Good - Minor issues'}
+                  {conditionRating === 3 && 'Average - Some issues'}
+                  {conditionRating === 2 && 'Poor - Major issues'}
+                  {conditionRating === 1 && 'Very Poor - Not as expected'}
+                </p>
+              </div>
+              <div>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={itemMatchesDescription}
+                    onChange={(e) => setItemMatchesDescription(e.target.checked)}
+                    className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="text-sm font-medium text-gray-700">
+                    Item matches the description provided
+                  </span>
+                </label>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Confirmation Comment (optional)
+                </label>
+                <textarea
+                  value={confirmationComment}
+                  onChange={(e) => setConfirmationComment(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  rows="3"
+                  placeholder="Add any comments about the delivery..."
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 mt-6">
               <button
                 onClick={confirmDelivery}
                 disabled={actionLoading}
@@ -634,7 +1001,12 @@ export default function TransactionDetail() {
                 {actionLoading ? 'Processing...' : 'Confirm Delivery'}
               </button>
               <button
-                onClick={() => setShowConfirmModal(false)}
+                onClick={() => {
+                  setShowConfirmModal(false);
+                  setConfirmationComment('');
+                  setConditionRating(5);
+                  setItemMatchesDescription(true);
+                }}
                 className="flex-1 bg-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-400 transition"
               >
                 Cancel
