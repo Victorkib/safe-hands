@@ -4,10 +4,11 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
+import { useAuth } from '@/context/AuthContext';
 
 export default function CreateListing() {
   const router = useRouter();
-  const [user, setUser] = useState(null);
+  const { user, profile, loading: authLoading } = useAuth();
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
@@ -24,37 +25,19 @@ export default function CreateListing() {
   });
 
   useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const { data: { user: authUser } } = await supabase.auth.getUser();
-        if (!authUser) {
-          router.push('/auth/login');
-          return;
-        }
-
-        // Check if user is a seller
-        const { data: userData } = await supabase
-          .from('users')
-          .select('role')
-          .eq('id', authUser.id)
-          .single();
-
-        if (userData?.role !== 'seller' && userData?.role !== 'buyer_seller') {
-          router.push('/dashboard');
-          return;
-        }
-
-        setUser(authUser);
-        fetchCategories();
-      } catch (error) {
-        console.error('Error:', error);
-        setError('Failed to load user data');
-      } finally {
-        setLoading(false);
-      }
-    };
-    checkAuth();
-  }, []);
+    if (authLoading) return;
+    if (!user) {
+      router.push('/auth/login');
+      setLoading(false);
+      return;
+    }
+    if (profile?.role !== 'seller' && profile?.role !== 'buyer_seller') {
+      router.push('/dashboard');
+      setLoading(false);
+      return;
+    }
+    fetchCategories().finally(() => setLoading(false));
+  }, [authLoading, user, profile, router]);
 
   const fetchCategories = async () => {
     const { data, error } = await supabase
@@ -89,8 +72,10 @@ export default function CreateListing() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (submitting) return;
     setSubmitting(true);
     setError(null);
+    let timeoutId = null;
 
     try {
       const form = e.target;
@@ -111,23 +96,20 @@ export default function CreateListing() {
 
       console.log('Starting listing creation...');
 
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) {
-        throw new Error('No active session found');
-      }
-
       console.log('Making API call to create listing...');
+      const controller = new AbortController();
+      timeoutId = setTimeout(() => controller.abort(), 20000);
       const response = await fetch('/api/listings', {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-        },
         body: formData,
+        credentials: 'same-origin',
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
+      timeoutId = null;
 
       console.log('API response status:', response.status);
-      const result = await response.json();
+      const result = await response.json().catch(() => ({}));
       console.log('API response data:', result);
 
       if (!response.ok) {
@@ -138,8 +120,9 @@ export default function CreateListing() {
       router.push('/dashboard/listings');
     } catch (error) {
       console.error('Error creating listing:', error);
-      setError(error.message || 'Failed to create listing');
+      setError(error?.name === 'AbortError' ? 'Request timed out. Please try again.' : (error.message || 'Failed to create listing'));
     } finally {
+      if (timeoutId) clearTimeout(timeoutId);
       setSubmitting(false);
     }
   };

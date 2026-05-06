@@ -4,13 +4,14 @@ import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
+import { useAuth } from '@/context/AuthContext';
 
 export default function TransactionDetail() {
   const router = useRouter();
   const params = useParams();
   const { id } = params;
+  const { user, loading: authLoading } = useAuth();
   
-  const [user, setUser] = useState(null);
   const [transaction, setTransaction] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -76,26 +77,14 @@ export default function TransactionDetail() {
   }, [transaction?.auto_release_date, transaction?.status]);
 
   useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const { data: { user: authUser } } = await supabase.auth.getUser();
-        if (!authUser) {
-          router.push('/auth/login');
-          return;
-        }
-        setUser(authUser);
-        fetchTransaction(authUser.id);
-      } catch (error) {
-        console.error('Error:', error);
-        setError('Failed to load transaction');
-        setLoading(false);
-      }
-    };
-
-    if (id) {
-      checkAuth();
+    if (!id || authLoading) return;
+    if (!user) {
+      router.push('/auth/login');
+      setLoading(false);
+      return;
     }
-  }, [id, router]);
+    fetchTransaction(user.id);
+  }, [id, authLoading, user, router]);
 
   const fetchTransaction = async (userId) => {
     try {
@@ -140,13 +129,8 @@ export default function TransactionDetail() {
 
   const fetchEvidence = async () => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-
       const response = await fetch(`/api/transactions/${id}/evidence`, {
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-        },
+        credentials: 'same-origin',
       });
 
       const result = await response.json();
@@ -160,16 +144,19 @@ export default function TransactionDetail() {
 
   const initiatePayment = async () => {
     setActionLoading(true);
+    let timeoutId = null;
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const controller = new AbortController();
+      timeoutId = setTimeout(() => controller.abort(), 20000);
       const response = await fetch(`/api/transactions/${id}/pay`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-        },
+        credentials: 'same-origin',
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
+      timeoutId = null;
 
-      const result = await response.json();
+      const result = await response.json().catch(() => ({}));
       
       if (result.success) {
         alert(result.message);
@@ -180,20 +167,22 @@ export default function TransactionDetail() {
       }
     } catch (error) {
       console.error('Payment error:', error);
-      alert('Failed to initiate payment');
+      alert(error?.name === 'AbortError' ? 'Payment request timed out. Please try again.' : 'Failed to initiate payment');
     } finally {
+      if (timeoutId) clearTimeout(timeoutId);
       setActionLoading(false);
     }
   };
 
   const markAsShipped = async () => {
     setActionLoading(true);
+    let timeoutId = null;
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const controller = new AbortController();
+      timeoutId = setTimeout(() => controller.abort(), 20000);
       const response = await fetch(`/api/transactions/${id}/ship`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -202,9 +191,13 @@ export default function TransactionDetail() {
           notes: shippingNotes || null,
           delivery_proof_url: '',
         }),
+        credentials: 'same-origin',
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
+      timeoutId = null;
 
-      const result = await response.json();
+      const result = await response.json().catch(() => ({}));
       
       if (result.success) {
         alert(result.message);
@@ -218,20 +211,22 @@ export default function TransactionDetail() {
       }
     } catch (error) {
       console.error('Shipping error:', error);
-      alert('Failed to mark as shipped');
+      alert(error?.name === 'AbortError' ? 'Shipping request timed out. Please try again.' : 'Failed to mark as shipped');
     } finally {
+      if (timeoutId) clearTimeout(timeoutId);
       setActionLoading(false);
     }
   };
 
   const confirmDelivery = async () => {
     setActionLoading(true);
+    let timeoutId = null;
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const controller = new AbortController();
+      timeoutId = setTimeout(() => controller.abort(), 20000);
       const response = await fetch(`/api/transactions/${id}/confirm-delivery`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -239,9 +234,13 @@ export default function TransactionDetail() {
           condition_rating: conditionRating,
           item_matches_description: itemMatchesDescription,
         }),
+        credentials: 'same-origin',
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
+      timeoutId = null;
 
-      const result = await response.json();
+      const result = await response.json().catch(() => ({}));
       
       if (result.success) {
         alert(result.message);
@@ -255,20 +254,22 @@ export default function TransactionDetail() {
       }
     } catch (error) {
       console.error('Confirmation error:', error);
-      alert('Failed to confirm delivery');
+      alert(error?.name === 'AbortError' ? 'Confirmation request timed out. Please try again.' : 'Failed to confirm delivery');
     } finally {
+      if (timeoutId) clearTimeout(timeoutId);
       setActionLoading(false);
     }
   };
 
   const handleRaiseDispute = async () => {
     setActionLoading(true);
+    let timeoutId = null;
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const controller = new AbortController();
+      timeoutId = setTimeout(() => controller.abort(), 20000);
       const response = await fetch('/api/disputes', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -276,9 +277,13 @@ export default function TransactionDetail() {
           reason: disputeReason,
           description: disputeDescription,
         }),
+        credentials: 'same-origin',
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
+      timeoutId = null;
 
-      const result = await response.json();
+      const result = await response.json().catch(() => ({}));
       
       if (result.success) {
         alert('Dispute raised successfully');
@@ -291,8 +296,9 @@ export default function TransactionDetail() {
       }
     } catch (error) {
       console.error('Dispute error:', error);
-      alert('Failed to raise dispute');
+      alert(error?.name === 'AbortError' ? 'Dispute request timed out. Please try again.' : 'Failed to raise dispute');
     } finally {
+      if (timeoutId) clearTimeout(timeoutId);
       setActionLoading(false);
     }
   };
@@ -300,9 +306,9 @@ export default function TransactionDetail() {
   const submitSellerDecision = async (actionType) => {
     if (!transaction) return;
     setActionLoading(true);
+    let timeoutId = null;
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
       const payload = {};
 
       if (sellerMessage.trim()) {
@@ -312,16 +318,21 @@ export default function TransactionDetail() {
         payload.proposed_amount = proposedAmount.trim();
       }
 
+      const controller = new AbortController();
+      timeoutId = setTimeout(() => controller.abort(), 20000);
       const response = await fetch(`/api/transactions/${id}/${actionType}`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(payload),
+        credentials: 'same-origin',
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
+      timeoutId = null;
 
-      const result = await response.json();
+      const result = await response.json().catch(() => ({}));
       if (!response.ok || !result.success) {
         alert(result.error || `Failed to ${actionType}`);
         return;
@@ -332,23 +343,27 @@ export default function TransactionDetail() {
       fetchTransaction(user.id);
     } catch (err) {
       console.error(`${actionType} error:`, err);
-      alert('Failed to submit seller decision');
+      alert(err?.name === 'AbortError' ? 'Request timed out. Please try again.' : 'Failed to submit seller decision');
     } finally {
+      if (timeoutId) clearTimeout(timeoutId);
       setActionLoading(false);
     }
   };
 
   const acceptSellerChanges = async () => {
     setActionLoading(true);
+    let timeoutId = null;
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const controller = new AbortController();
+      timeoutId = setTimeout(() => controller.abort(), 20000);
       const response = await fetch(`/api/transactions/${id}/accept-changes`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-        },
+        credentials: 'same-origin',
+        signal: controller.signal,
       });
-      const result = await response.json();
+      clearTimeout(timeoutId);
+      timeoutId = null;
+      const result = await response.json().catch(() => ({}));
       if (!response.ok || !result.success) {
         alert(result.error || 'Failed to accept changes');
         return;
@@ -356,8 +371,9 @@ export default function TransactionDetail() {
       fetchTransaction(user.id);
     } catch (error) {
       console.error('Accept changes error:', error);
-      alert('Failed to accept seller changes');
+      alert(error?.name === 'AbortError' ? 'Request timed out. Please try again.' : 'Failed to accept seller changes');
     } finally {
+      if (timeoutId) clearTimeout(timeoutId);
       setActionLoading(false);
     }
   };
@@ -699,7 +715,7 @@ export default function TransactionDetail() {
       <div className="bg-white rounded-lg shadow p-6">
         <h2 className="text-xl font-bold text-gray-900 mb-4">Actions</h2>
         
-        {isBuyer && (transaction.status === 'seller_approved' || transaction.status === 'initiated') && (
+        {isBuyer && transaction.status === 'seller_approved' && (
           <button
             onClick={() => setShowPaymentModal(true)}
             className="w-full bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition font-medium mb-2"

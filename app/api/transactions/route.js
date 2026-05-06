@@ -1,8 +1,8 @@
-import { getServerSupabase } from '@/lib/getServerSupabase';
 import { supabaseAdmin } from '@/lib/supabaseAdmin.js';
 import { validateTransactionForm } from '@/lib/validation';
 import { generateToken, hashToken } from '@/lib/tokenService';
 import { sendSellerInvitationEmail } from '@/lib/emailService';
+import { getAuthenticatedUser, unauthorizedResponse } from '@/lib/apiAuth';
 
 /**
  * POST /api/transactions
@@ -11,18 +11,8 @@ import { sendSellerInvitationEmail } from '@/lib/emailService';
 export async function POST(request) {
   try {
     console.log('=== TRANSACTION API CALL STARTED ===');
-    
-    // Authenticate via cookie-based server client
-    const supabase = await getServerSupabase(request);
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      console.error('Auth error:', authError);
-      return Response.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    const { user } = await getAuthenticatedUser(request);
+    if (!user) return unauthorizedResponse();
 
     console.log('User authenticated:', user.id);
 
@@ -203,7 +193,7 @@ export async function POST(request) {
     await supabaseAdmin.from('notifications').insert({
       user_id: targetSellerId,
       title: 'Transaction Approval Needed',
-      message: `You have a new transaction request awaiting approval for KES ${amount.toLocaleString()}`,
+      message: `You have a new transaction request awaiting approval for KES ${Number(amount).toLocaleString()}`,
       type: 'transaction_created',
       related_transaction_id: transaction.id,
     });
@@ -229,15 +219,8 @@ export async function POST(request) {
  */
 export async function GET(request) {
   try {
-    const supabase = await getServerSupabase(request);
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      return Response.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    const { user } = await getAuthenticatedUser(request);
+    if (!user) return unauthorizedResponse();
 
     // Get query parameters
     const { searchParams } = new URL(request.url);

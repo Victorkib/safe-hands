@@ -4,35 +4,30 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
+import { useAuth } from '@/context/AuthContext';
 
 export default function ListingsManagement() {
   const router = useRouter();
-  const [user, setUser] = useState(null);
+  const { user, loading: authLoading } = useAuth();
   const [listings, setListings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const { data: { user: authUser } } = await supabase.auth.getUser();
-        if (!authUser) {
-          router.push('/auth/login');
-          return;
-        }
-
-        setUser(authUser);
-        fetchListings(authUser.id);
-      } catch (error) {
+    if (authLoading) return;
+    if (!user) {
+      router.push('/auth/login');
+      setLoading(false);
+      return;
+    }
+    fetchListings(user.id)
+      .catch((error) => {
         console.error('Error:', error);
         setError('Failed to load data');
-      } finally {
-        setLoading(false);
-      }
-    };
-    checkAuth();
-  }, [router]);
+      })
+      .finally(() => setLoading(false));
+  }, [authLoading, user, router]);
 
   const fetchListings = async (userId) => {
     const { data, error } = await supabase
@@ -63,17 +58,19 @@ export default function ListingsManagement() {
   const handleDelete = async (listingId) => {
     if (!confirm('Are you sure you want to delete this listing?')) return;
 
+    let timeoutId = null;
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      
+      const controller = new AbortController();
+      timeoutId = setTimeout(() => controller.abort(), 20000);
       const response = await fetch(`/api/listings/${listingId}`, {
         method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-        },
+        credentials: 'same-origin',
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
+      timeoutId = null;
 
-      const result = await response.json();
+      const result = await response.json().catch(() => ({}));
       if (result.success) {
         fetchListings(user.id);
       } else {
@@ -81,28 +78,32 @@ export default function ListingsManagement() {
       }
     } catch (error) {
       console.error('Error deleting listing:', error);
-      alert('Failed to delete listing');
+      alert(error?.name === 'AbortError' ? 'Request timed out. Please try again.' : 'Failed to delete listing');
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
     }
   };
 
   const handleMarkSold = async (listingId) => {
     if (!confirm('Mark this listing as sold?')) return;
 
+    let timeoutId = null;
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      
       const formData = new FormData();
       formData.append('status', 'sold');
 
+      const controller = new AbortController();
+      timeoutId = setTimeout(() => controller.abort(), 20000);
       const response = await fetch(`/api/listings/${listingId}`, {
         method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-        },
         body: formData,
+        credentials: 'same-origin',
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
+      timeoutId = null;
 
-      const result = await response.json();
+      const result = await response.json().catch(() => ({}));
       if (result.success) {
         fetchListings(user.id);
       } else {
@@ -110,7 +111,9 @@ export default function ListingsManagement() {
       }
     } catch (error) {
       console.error('Error updating listing:', error);
-      alert('Failed to update listing');
+      alert(error?.name === 'AbortError' ? 'Request timed out. Please try again.' : 'Failed to update listing');
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
     }
   };
 

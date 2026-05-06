@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/context/AuthContext';
 
 export default function DisputesPage() {
@@ -15,27 +14,38 @@ export default function DisputesPage() {
   const isAdmin = profile?.role === 'admin';
 
   useEffect(() => {
+    if (authLoading) return;
+    if (!user) {
+      router.push('/auth/login');
+      setLoading(false);
+      return;
+    }
+
     if (!authLoading && user) {
       if (isAdmin) {
         // Admins see all disputes - go to admin disputes page
         router.push('/dashboard/admin/disputes');
+        setLoading(false);
       } else {
         // Users see their own disputes
-        fetchDisputes(user.id);
+        fetchDisputes();
       }
     }
   }, [user, authLoading, isAdmin, router]);
 
-  const fetchDisputes = async (userId) => {
-    const { data: { session } } = await supabase.auth.getSession();
-    const response = await fetch(`/api/disputes`, {
-      headers: {
-        'Authorization': `Bearer ${session.access_token}`,
-      },
-    });
-    const result = await response.json();
-    if (result.success) {
-      setDisputes(result.disputes);
+  const fetchDisputes = async () => {
+    try {
+      const response = await fetch('/api/disputes', {
+        credentials: 'same-origin',
+      });
+      const result = await response.json();
+      if (result.success) {
+        setDisputes(result.disputes);
+      }
+    } catch (error) {
+      console.error('Failed to fetch disputes:', error);
+    } finally {
+      setLoading(false);
     }
   };
 

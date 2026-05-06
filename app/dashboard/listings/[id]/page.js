@@ -4,13 +4,14 @@ import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
+import { useAuth } from '@/context/AuthContext';
 
 export default function EditListing() {
   const router = useRouter();
   const params = useParams();
   const { id } = params;
+  const { user, loading: authLoading } = useAuth();
   
-  const [user, setUser] = useState(null);
   const [listing, setListing] = useState(null);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -30,28 +31,19 @@ export default function EditListing() {
   });
 
   useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        if (!id) return;
-        const { data: { user: authUser } } = await supabase.auth.getUser();
-        if (!authUser) {
-          router.push('/auth/login');
-          return;
-        }
-        setUser(authUser);
-        fetchListing(authUser.id);
-        fetchCategories();
-      } catch (error) {
+    if (!id || authLoading) return;
+    if (!user) {
+      router.push('/auth/login');
+      setLoading(false);
+      return;
+    }
+    Promise.all([fetchListing(user.id), fetchCategories()])
+      .catch((error) => {
         console.error('Error:', error);
         setError('Failed to load data');
-      } finally {
-        setLoading(false);
-      }
-    };
-    if (id) {
-      checkAuth();
-    }
-  }, [id, router]);
+      })
+      .finally(() => setLoading(false));
+  }, [id, authLoading, user, router]);
 
   const fetchListing = async (userId) => {
     const { data, error } = await supabase
@@ -125,8 +117,10 @@ export default function EditListing() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (submitting) return;
     setSubmitting(true);
     setError(null);
+    let timeoutId = null;
 
     try {
       const form = e.target;
@@ -150,17 +144,18 @@ export default function EditListing() {
         });
       }
 
-      const { data: { session } } = await supabase.auth.getSession();
-      
+      const controller = new AbortController();
+      timeoutId = setTimeout(() => controller.abort(), 20000);
       const response = await fetch(`/api/listings/${id}`, {
         method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-        },
         body: formData,
+        credentials: 'same-origin',
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
+      timeoutId = null;
 
-      const result = await response.json();
+      const result = await response.json().catch(() => ({}));
 
       if (!response.ok) {
         throw new Error(result.error || 'Failed to update listing');
@@ -169,8 +164,9 @@ export default function EditListing() {
       router.push('/dashboard/listings');
     } catch (error) {
       console.error('Error updating listing:', error);
-      setError(error.message || 'Failed to update listing');
+      setError(error?.name === 'AbortError' ? 'Request timed out. Please try again.' : (error.message || 'Failed to update listing'));
     } finally {
+      if (timeoutId) clearTimeout(timeoutId);
       setSubmitting(false);
     }
   };

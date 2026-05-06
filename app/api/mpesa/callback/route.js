@@ -128,10 +128,11 @@ export async function POST(request) {
 
     } else {
       // Payment failed
+      const fallbackStatus = transaction.status === 'payment_pending' ? 'seller_approved' : transaction.status;
       const { error: updateError } = await supabase
         .from('transactions')
         .update({
-          status: 'initiated',
+          status: fallbackStatus,
         })
         .eq('id', transaction.id);
 
@@ -143,7 +144,7 @@ export async function POST(request) {
       await supabase.from('transaction_history').insert({
         transaction_id: transaction.id,
         old_status: transaction.status,
-        new_status: 'initiated',
+        new_status: fallbackStatus,
         changed_by: null,
         reason: `Payment failed: ${ResultDesc}`,
       });

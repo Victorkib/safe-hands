@@ -3,10 +3,11 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
+import { useAuth } from '@/context/AuthContext';
 
 export default function CreateTransaction() {
   const router = useRouter();
-  const [user, setUser] = useState(null);
+  const { user, loading: authLoading } = useAuth();
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
@@ -18,23 +19,14 @@ export default function CreateTransaction() {
   });
 
   useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const { data: { user: authUser } } = await supabase.auth.getUser();
-        if (!authUser) {
-          router.push('/auth/login');
-          return;
-        }
-        setUser(authUser);
-      } catch (error) {
-        console.error('Error:', error);
-        setError('Failed to load user data');
-      } finally {
-        setLoading(false);
-      }
-    };
-    checkAuth();
-  }, [router]);
+    if (authLoading) return;
+    if (!user) {
+      router.push('/auth/login');
+      setLoading(false);
+      return;
+    }
+    setLoading(false);
+  }, [authLoading, user, router]);
 
   useEffect(() => {
     const prefillData = localStorage.getItem('prefillTransaction');
@@ -80,30 +72,31 @@ export default function CreateTransaction() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (submitting) return;
     setSubmitting(true);
     setError(null);
+    let timeoutId = null;
 
     try {
       console.log('Starting transaction creation with data:', formData);
-      
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) {
-        throw new Error('No active session found');
-      }
 
       console.log('Making API call...');
+      const controller = new AbortController();
+      timeoutId = setTimeout(() => controller.abort(), 20000);
       const response = await fetch('/api/transactions', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(formData),
+        credentials: 'same-origin',
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
+      timeoutId = null;
 
       console.log('API response status:', response.status);
-      const result = await response.json();
+      const result = await response.json().catch(() => ({}));
       console.log('API response data:', result);
 
       if (response.status === 202 && result.invitation_created) {
@@ -115,13 +108,21 @@ export default function CreateTransaction() {
       if (!response.ok) {
         throw new Error(result.error || 'Failed to create transaction');
       }
+      if (!result?.transaction?.id) {
+        throw new Error('Transaction was created but no transaction ID was returned.');
+      }
 
       console.log('Transaction created successfully, redirecting...');
       router.push(`/dashboard/transactions/${result.transaction.id}`);
     } catch (error) {
       console.error('Error creating transaction:', error);
-      setError(error.message || 'An unexpected error occurred');
+      if (error.name === 'AbortError') {
+        setError('Request timed out. Please check your network and try again.');
+      } else {
+        setError(error.message || 'An unexpected error occurred');
+      }
     } finally {
+      if (timeoutId) clearTimeout(timeoutId);
       setSubmitting(false);
     }
   };

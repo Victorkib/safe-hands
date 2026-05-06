@@ -13,6 +13,20 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     let isMounted = true;
+    const withTimeout = async (promise, ms, fallbackMessage) => {
+      let timeoutId;
+      const timeoutPromise = new Promise((_, reject) => {
+        timeoutId = setTimeout(
+          () => reject(new Error(fallbackMessage || 'Operation timed out')),
+          ms
+        );
+      });
+      try {
+        return await Promise.race([promise, timeoutPromise]);
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    };
 
     const initializeAuth = async () => {
       try {
@@ -20,7 +34,11 @@ export function AuthProvider({ children }) {
         const {
           data: { user: authUser },
           error: userError,
-        } = await supabase.auth.getUser();
+        } = await withTimeout(
+          supabase.auth.getUser(),
+          8000,
+          'Auth initialization timed out'
+        );
 
         if (userError) {
           console.error('[v0] Auth error:', userError);
@@ -45,11 +63,15 @@ export function AuthProvider({ children }) {
           // Fetch user profile relying on RLS (avoids id=eq.undefined issues)
           // RLS limits non-admins to only their own row, admins can see all.
           // maybeSingle() prevents 400 on empty and returns null instead.
-          const { data: profileData, error: profileError } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', authUser.id)
-            .single();
+          const { data: profileData, error: profileError } = await withTimeout(
+            supabase
+              .from('users')
+              .select('*')
+              .eq('id', authUser.id)
+              .single(),
+            8000,
+            'Profile fetch timed out'
+          );
 
           if (profileError) {
             console.error('[v0] Profile fetch error:', profileError);
