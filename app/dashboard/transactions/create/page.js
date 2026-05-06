@@ -41,11 +41,36 @@ export default function CreateTransaction() {
     if (prefillData) {
       try {
         const data = JSON.parse(prefillData);
-        setFormData({
-          seller_email: data.seller_email || '',
-          amount: data.amount || '',
-          description: data.description || '',
-        });
+        console.log('Prefill data found:', data);
+        
+        // Fetch seller details to get full name
+        const fetchSellerDetails = async () => {
+          try {
+            const { data: seller } = await supabase
+              .from('users')
+              .select('full_name, email')
+              .eq('email', data.seller_email)
+              .single();
+            
+            console.log('Fetched seller:', seller);
+            
+            setFormData({
+              seller_email: data.seller_email || '',
+              amount: data.amount || '',
+              description: data.description || '',
+            });
+          } catch (error) {
+            console.error('Error fetching seller details:', error);
+            // Still set form data even if seller fetch fails
+            setFormData({
+              seller_email: data.seller_email || '',
+              amount: data.amount || '',
+              description: data.description || '',
+            });
+          }
+        };
+        
+        fetchSellerDetails();
         localStorage.removeItem('prefillTransaction');
       } catch (error) {
         console.error('Error parsing prefill data:', error);
@@ -59,8 +84,15 @@ export default function CreateTransaction() {
     setError(null);
 
     try {
+      console.log('Starting transaction creation with data:', formData);
+      
       const { data: { session } } = await supabase.auth.getSession();
       
+      if (!session) {
+        throw new Error('No active session found');
+      }
+
+      console.log('Making API call...');
       const response = await fetch('/api/transactions', {
         method: 'POST',
         headers: {
@@ -70,16 +102,19 @@ export default function CreateTransaction() {
         body: JSON.stringify(formData),
       });
 
+      console.log('API response status:', response.status);
       const result = await response.json();
+      console.log('API response data:', result);
 
       if (!response.ok) {
         throw new Error(result.error || 'Failed to create transaction');
       }
 
+      console.log('Transaction created successfully, redirecting...');
       router.push(`/dashboard/transactions/${result.transaction.id}`);
     } catch (error) {
       console.error('Error creating transaction:', error);
-      setError(error.message);
+      setError(error.message || 'An unexpected error occurred');
     } finally {
       setSubmitting(false);
     }

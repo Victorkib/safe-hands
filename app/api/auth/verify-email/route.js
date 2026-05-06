@@ -6,7 +6,7 @@
 
 import { verifyEmailToken } from '@/lib/tokenService.js';
 import { sendWelcomeEmail } from '@/lib/emailService.js';
-import { supabaseAdmin } from '@/lib/supabaseClient.js';
+import { supabaseAdmin } from '@/lib/supabaseAdmin.js';
 
 export async function POST(request) {
   try {

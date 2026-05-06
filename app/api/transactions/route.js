@@ -1,11 +1,6 @@
-import { createClient } from '@supabase/supabase-js';
+import { getServerSupabase } from '@/lib/getServerSupabase';
+import { supabaseAdmin } from '@/lib/supabaseAdmin.js';
 import { validateTransactionForm } from '@/lib/validation';
-
-// Initialize Supabase client with service role for admin operations
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
 
 /**
  * POST /api/transactions
@@ -13,29 +8,24 @@ const supabase = createClient(
  */
 export async function POST(request) {
   try {
-    // Get the authorization header
-    const authHeader = request.headers.get('authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    console.log('=== TRANSACTION API CALL STARTED ===');
+    
+    // Authenticate via cookie-based server client
+    const supabase = await getServerSupabase(request);
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      console.error('Auth error:', authError);
       return Response.json(
         { error: 'Unauthorized' },
         { status: 401 }
       );
     }
 
-    const token = authHeader.substring(7);
-
-    // Verify the token and get user
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    
-    if (authError || !user) {
-      return Response.json(
-        { error: 'Invalid token' },
-        { status: 401 }
-      );
-    }
+    console.log('User authenticated:', user.id);
 
     // Get user's role from database
-    const { data: userData, error: userError } = await supabase
+    const { data: userData, error: userError } = await supabaseAdmin
       .from('users')
       .select('role, phone_number')
       .eq('id', user.id)
@@ -53,10 +43,10 @@ export async function POST(request) {
     const { seller_id, amount, description, seller_email } = body;
 
     // Validate input
-    const validationError = validateTransactionForm(body);
-    if (validationError) {
+    const validationErrors = validateTransactionForm(body);
+    if (Object.keys(validationErrors).length > 0) {
       return Response.json(
-        { error: validationError },
+        { error: Object.values(validationErrors)[0] }, // Return first error message
         { status: 400 }
       );
     }
@@ -72,7 +62,7 @@ export async function POST(request) {
     // Find seller by email if seller_id not provided
     let targetSellerId = seller_id;
     if (!seller_id && seller_email) {
-      const { data: sellerData } = await supabase
+      const { data: sellerData } = await supabaseAdmin
         .from('users')
         .select('id')
         .eq('email', seller_email)
@@ -88,7 +78,7 @@ export async function POST(request) {
     }
 
     // Verify seller exists and has valid role
-    const { data: sellerData, error: sellerError } = await supabase
+    const { data: sellerData, error: sellerError } = await supabaseAdmin
       .from('users')
       .select('id, role')
       .eq('id', targetSellerId)
@@ -117,7 +107,7 @@ export async function POST(request) {
     }
 
     // Create transaction
-    const { data: transaction, error: transactionError } = await supabase
+    const { data: transaction, error: transactionError } = await supabaseAdmin
       .from('transactions')
       .insert({
         buyer_id: user.id,
@@ -141,7 +131,7 @@ export async function POST(request) {
     }
 
     // Log to audit trail
-    await supabase.from('transaction_history').insert({
+    await supabaseAdmin.from('transaction_history').insert({
       transaction_id: transaction.id,
       old_status: null,
       new_status: 'initiated',
@@ -150,7 +140,7 @@ export async function POST(request) {
     });
 
     // Create notification for seller
-    await supabase.from('notifications').insert({
+    await supabaseAdmin.from('notifications').insert({
       user_id: targetSellerId,
       title: 'New Transaction Request',
       message: `You have a new transaction request for KES ${amount.toLocaleString()}`,
@@ -179,20 +169,12 @@ export async function POST(request) {
  */
 export async function GET(request) {
   try {
-    const authHeader = request.headers.get('authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return Response.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    const supabase = await getServerSupabase(request);
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
 
-    const token = authHeader.substring(7);
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    
     if (authError || !user) {
       return Response.json(
-        { error: 'Invalid token' },
+        { error: 'Unauthorized' },
         { status: 401 }
       );
     }
@@ -203,7 +185,7 @@ export async function GET(request) {
     const role = searchParams.get('role'); // 'buyer' or 'seller'
 
     // Build query
-    let query = supabase
+    let query = supabaseAdmin
       .from('transactions')
       .select(`
         *,

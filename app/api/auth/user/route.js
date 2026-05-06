@@ -4,7 +4,7 @@ import { getServerSupabase } from '@/lib/getServerSupabase';
 export async function GET(request) {
   try {
     // Create authenticated client from request (uses Authorization header)
-    const supabase = getServerSupabase(request);
+    const supabase = await getServerSupabase(request);
 
     // Get current user
     const {

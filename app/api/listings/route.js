@@ -1,10 +1,6 @@
-import { createClient } from '@supabase/supabase-js';
+import { getServerSupabase } from '@/lib/getServerSupabase';
+import { supabaseAdmin } from '@/lib/supabaseAdmin.js';
 import { validateListingForm } from '@/lib/validation.js';
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
 
 /**
  * GET /api/listings - Browse listings (public)
@@ -22,7 +18,7 @@ export async function GET(request) {
     const sort = searchParams.get('sort') || 'newest'; // newest, price_low, price_high
     const offset = (page - 1) * limit;
 
-    let query = supabase
+    let query = supabaseAdmin
       .from('listings')
       .select(`
         *,
@@ -75,6 +71,20 @@ export async function GET(request) {
       );
     }
 
+    // Debug: Log listings with image info
+    console.log('=== MARKETPLACE DEBUG INFO ===');
+    console.log('Total listings:', listings?.length || 0);
+    listings?.forEach((listing, index) => {
+      console.log(`Listing ${index + 1}:`, {
+        id: listing.id,
+        title: listing.title,
+        hasImages: listing.images && listing.images.length > 0,
+        imageCount: listing.images?.length || 0,
+        firstImage: listing.images?.[0]
+      });
+    });
+    console.log('==============================');
+
     return new Response(
       JSON.stringify({
         success: true,
@@ -102,16 +112,8 @@ export async function GET(request) {
  */
 export async function POST(request) {
   try {
-    const authHeader = request.headers.get('authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return new Response(
-        JSON.stringify({ success: false, error: 'Unauthorized' }),
-        { status: 401, headers: { 'Content-Type': 'application/json' } }
-      );
-    }
-
-    const token = authHeader.split(' ')[1];
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    const supabase = await getServerSupabase(request);
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
 
     if (authError || !user) {
       return new Response(
@@ -121,7 +123,7 @@ export async function POST(request) {
     }
 
     // Check if user is a seller
-    const { data: userData, error: userError } = await supabase
+    const { data: userData, error: userError } = await supabaseAdmin
       .from('users')
       .select('role')
       .eq('id', user.id)
@@ -186,7 +188,7 @@ export async function POST(request) {
       const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
       const filePath = `${user.id}/${fileName}`;
 
-      const { error: uploadError } = await supabase.storage
+      const { error: uploadError } = await supabaseAdmin.storage
         .from(bucketName)
         .upload(filePath, image);
 
@@ -198,7 +200,7 @@ export async function POST(request) {
         );
       }
 
-      const { data: { publicUrl } } = supabase.storage
+      const { data: { publicUrl } } = supabaseAdmin.storage
         .from(bucketName)
         .getPublicUrl(filePath);
 
@@ -206,7 +208,7 @@ export async function POST(request) {
     }
 
     // Create listing in database
-    const { data: listing, error: insertError } = await supabase
+    const { data: listing, error: insertError } = await supabaseAdmin
       .from('listings')
       .insert({
         seller_id: user.id,

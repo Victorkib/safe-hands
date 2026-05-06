@@ -32,7 +32,19 @@ export function AuthProvider({ children }) {
         if (authUser && isMounted) {
           setUser(authUser);
 
-          // Fetch user profile
+          // Guard against undefined authUser.id which would trigger
+          // a REST call like id=eq.undefined and cause 400 (invalid uuid)
+          if (!authUser.id) {
+            console.warn(
+              '[v0] Auth user present but missing id; skipping profile fetch',
+            );
+            if (isMounted) setLoading(false);
+            return;
+          }
+
+          // Fetch user profile relying on RLS (avoids id=eq.undefined issues)
+          // RLS limits non-admins to only their own row, admins can see all.
+          // maybeSingle() prevents 400 on empty and returns null instead.
           const { data: profileData, error: profileError } = await supabase
             .from('users')
             .select('*')
@@ -61,21 +73,36 @@ export function AuthProvider({ children }) {
     // Subscribe to auth changes
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, authUser) => {
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!isMounted) return;
 
-      if (authUser) {
+      // Supabase onAuthStateChange provides a session, not a user
+      const authUser = session?.user ?? null;
+
+      if (authUser?.id) {
         setUser(authUser);
 
         // Fetch profile when auth state changes
-        const { data: profileData } = await supabase
-          .from('users')
-          .select('*')
-          .eq('id', authUser.id)
-          .single();
+        try {
+          const { data: profileData, error: profileErr } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', authUser.id)
+            .single();
 
-        if (profileData) {
-          setProfile(profileData);
+          if (profileErr) {
+            console.warn(
+              '[v0] Profile fetch on auth change failed:',
+              profileErr.message,
+            );
+          } else if (profileData) {
+            setProfile(profileData);
+          }
+        } catch (e) {
+          console.warn(
+            '[v0] Profile fetch on auth change threw:',
+            e?.message || e,
+          );
         }
       } else {
         setUser(null);

@@ -4,41 +4,24 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
+import { useAuth } from '@/context/AuthContext';
 
 export default function DashboardLayout({ children, title, breadcrumbs }) {
   const router = useRouter();
-  const [user, setUser] = useState(null);
-  const [userRole, setUserRole] = useState(null);
+  const { user, profile, loading: authLoading } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const { data: { user: authUser } } = await supabase.auth.getUser();
-        if (!authUser) {
-          router.push('/auth/login');
-          return;
-        }
-        setUser(authUser);
-        
-        // Fetch user role
-        const { data } = await supabase
-          .from('users')
-          .select('role, full_name, avatar_url')
-          .eq('id', authUser.id)
-          .single();
-        
-        setUserRole(data?.role || null);
-      } catch (error) {
-        console.error('Error:', error);
+    if (!authLoading) {
+      if (!user) {
         router.push('/auth/login');
-      } finally {
-        setLoading(false);
       }
-    };
-    checkAuth();
-  }, [router]);
+      setLoading(false);
+    }
+  }, [authLoading, user, router]);
+
+  const userRole = profile?.role || null;
 
   const handleLogout = async () => {
     try {

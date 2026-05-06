@@ -1,61 +1,16 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
+import { useAuth } from '@/context/AuthContext';
 
 export default function Navbar() {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const { user, profile } = useAuth();
   const [showMenu, setShowMenu] = useState(false);
-  const [userRole, setUserRole] = useState(null);
+  const userRole = profile?.role || null;
   const router = useRouter();
-
-  useEffect(() => {
-    const getUser = async () => {
-      try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        setUser(user);
-        
-        if (user) {
-          const { data } = await supabase
-            .from('users')
-            .select('role')
-            .eq('id', user.id)
-            .single();
-          setUserRole(data?.role || null);
-        }
-      } catch (error) {
-        console.error('Error fetching user:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    getUser();
-
-    // Listen for auth changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      setUser(session?.user || null);
-      if (session?.user) {
-        const { data } = await supabase
-          .from('users')
-          .select('role')
-          .eq('id', session.user.id)
-          .single();
-        setUserRole(data?.role || null);
-      } else {
-        setUserRole(null);
-      }
-    });
-
-    return () => subscription?.unsubscribe();
-  }, []);
 
   const handleLogout = async () => {
     try {

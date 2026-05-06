@@ -3,11 +3,12 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
+import { useAuth } from '@/context/AuthContext';
 import { Spinner } from '@/components/ui/spinner';
 import { Skeleton } from '@/components/ui/skeleton';
 
 export default function BuyerDashboard() {
-  const [user, setUser] = useState(null);
+  const { user } = useAuth();
   const [transactions, setTransactions] = useState([]);
   const [stats, setStats] = useState({
     total: 0,
@@ -23,10 +24,7 @@ export default function BuyerDashboard() {
     const fetchTransactions = async () => {
       try {
         setLoadingStage('auth');
-        const { data: { user: authUser } } = await supabase.auth.getUser();
-        if (!authUser) return;
-        
-        setUser(authUser);
+        if (!user) return;
         setLoadingStage('transactions');
 
         const { data } = await supabase
@@ -36,7 +34,7 @@ export default function BuyerDashboard() {
             seller:seller_id(email, full_name, id),
             disputes(id, status)
           `)
-          .eq('buyer_id', authUser.id)
+          .eq('buyer_id', user.id)
           .order('created_at', { ascending: false });
 
         if (data) {

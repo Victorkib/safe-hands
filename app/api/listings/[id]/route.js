@@ -1,24 +1,20 @@
-import { createClient } from '@supabase/supabase-js';
+import { getServerSupabase } from '@/lib/getServerSupabase';
+import { supabaseAdmin } from '@/lib/supabaseAdmin.js';
 import { validateListingForm } from '@/lib/validation.js';
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
 
 /**
  * GET /api/listings/[id] - Get listing details
  */
 export async function GET(request, { params }) {
   try {
-    const { id } = params;
+    const { id } = await params;
 
-    const { data: listing, error } = await supabase
+    const { data: listing, error } = await supabaseAdmin
       .from('listings')
       .select(`
         *,
         category:categories(name, slug, description),
-        seller:users(id, full_name, email, phone, created_at)
+        seller:users!listings_seller_id_fkey(id, full_name, email, phone_number, created_at)
       `)
       .eq('id', id)
       .single();
@@ -32,7 +28,7 @@ export async function GET(request, { params }) {
     }
 
     // Increment view count
-    await supabase
+    await supabaseAdmin
       .from('listings')
       .update({ view_count: (listing.view_count || 0) + 1 })
       .eq('id', id);
@@ -55,18 +51,9 @@ export async function GET(request, { params }) {
  */
 export async function PUT(request, { params }) {
   try {
-    const { id } = params;
-    const authHeader = request.headers.get('authorization');
-    
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return new Response(
-        JSON.stringify({ success: false, error: 'Unauthorized' }),
-        { status: 401, headers: { 'Content-Type': 'application/json' } }
-      );
-    }
-
-    const token = authHeader.split(' ')[1];
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    const { id } = await params;
+    const supabase = await getServerSupabase(request);
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
 
     if (authError || !user) {
       return new Response(
@@ -76,7 +63,7 @@ export async function PUT(request, { params }) {
     }
 
     // Check if listing exists and belongs to user
-    const { data: existingListing, error: fetchError } = await supabase
+    const { data: existingListing, error: fetchError } = await supabaseAdmin
       .from('listings')
       .select('*')
       .eq('id', id)
@@ -140,7 +127,7 @@ export async function PUT(request, { params }) {
       for (const url of imagesToDelete) {
         try {
           const filePath = url.split(`${bucketName}/`)[1];
-          await supabase.storage.from(bucketName).remove([filePath]);
+          await supabaseAdmin.storage.from(bucketName).remove([filePath]);
         } catch (err) {
           console.error('Error deleting image:', err);
         }
@@ -160,7 +147,7 @@ export async function PUT(request, { params }) {
       const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
       const filePath = `${user.id}/${fileName}`;
 
-      const { error: uploadError } = await supabase.storage
+      const { error: uploadError } = await supabaseAdmin.storage
         .from(bucketName)
         .upload(filePath, image);
 
@@ -172,7 +159,7 @@ export async function PUT(request, { params }) {
         );
       }
 
-      const { data: { publicUrl } } = supabase.storage
+      const { data: { publicUrl } } = supabaseAdmin.storage
         .from(bucketName)
         .getPublicUrl(filePath);
 
@@ -196,7 +183,7 @@ export async function PUT(request, { params }) {
       updateData.sold_at = new Date().toISOString();
     }
 
-    const { data: listing, error: updateError } = await supabase
+    const { data: listing, error: updateError } = await supabaseAdmin
       .from('listings')
       .update(updateData)
       .eq('id', id)
@@ -233,18 +220,9 @@ export async function PUT(request, { params }) {
  */
 export async function DELETE(request, { params }) {
   try {
-    const { id } = params;
-    const authHeader = request.headers.get('authorization');
-    
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return new Response(
-        JSON.stringify({ success: false, error: 'Unauthorized' }),
-        { status: 401, headers: { 'Content-Type': 'application/json' } }
-      );
-    }
-
-    const token = authHeader.split(' ')[1];
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    const { id } = await params;
+    const supabase = await getServerSupabase(request);
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
 
     if (authError || !user) {
       return new Response(
@@ -254,7 +232,7 @@ export async function DELETE(request, { params }) {
     }
 
     // Check if listing exists and belongs to user
-    const { data: existingListing, error: fetchError } = await supabase
+    const { data: existingListing, error: fetchError } = await supabaseAdmin
       .from('listings')
       .select('*')
       .eq('id', id)
@@ -280,7 +258,7 @@ export async function DELETE(request, { params }) {
       for (const url of existingListing.images) {
         try {
           const filePath = url.split(`${bucketName}/`)[1];
-          await supabase.storage.from(bucketName).remove([filePath]);
+          await supabaseAdmin.storage.from(bucketName).remove([filePath]);
         } catch (err) {
           console.error('Error deleting image:', err);
         }
@@ -288,7 +266,7 @@ export async function DELETE(request, { params }) {
     }
 
     // Delete listing from database (soft delete)
-    const { error: deleteError } = await supabase
+    const { error: deleteError } = await supabaseAdmin
       .from('listings')
       .update({ status: 'deleted' })
       .eq('id', id);

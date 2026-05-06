@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
+import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
 
 export default function TransactionDetail() {
@@ -225,16 +226,6 @@ export default function TransactionDetail() {
         <div className="text-center">
           <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-gray-600">Loading transaction...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <p className="text-red-600 text-lg mb-4">{error}</p>
           <Link href="/dashboard" className="text-blue-600 hover:text-blue-700">
             Back to Dashboard
           </Link>
@@ -277,13 +268,13 @@ export default function TransactionDetail() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <p className="text-sm text-gray-600 mb-1">Buyer</p>
-              <p className="font-medium text-gray-900">{transaction.buyer.full_name}</p>
-              <p className="text-sm text-gray-600">{transaction.buyer.email}</p>
+              <p className="font-medium text-gray-900">{transaction.buyer?.full_name || 'Loading...'}</p>
+              <p className="text-sm text-gray-600">{transaction.buyer?.email || 'Loading...'}</p>
             </div>
             <div>
               <p className="text-sm text-gray-600 mb-1">Seller</p>
-              <p className="font-medium text-gray-900">{transaction.seller.full_name}</p>
-              <p className="text-sm text-gray-600">{transaction.seller.email}</p>
+              <p className="font-medium text-gray-900">{transaction.seller?.full_name || 'Loading...'}</p>
+              <p className="text-sm text-gray-600">{transaction.seller?.email || 'Loading...'}</p>
             </div>
           </div>
         </div>

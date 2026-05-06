@@ -1,6 +1,7 @@
 'use server';
 
-import { supabase, supabaseAdmin } from '@/lib/supabaseClient.js';
+import { getServerSupabase } from '@/lib/getServerSupabase';
+import { supabaseAdmin } from '@/lib/supabaseAdmin.js';
 import { sendVerificationEmail } from '@/lib/emailService.js';
 import { createEmailVerificationToken } from '@/lib/tokenService.js';
 
@@ -11,6 +12,7 @@ export async function signupUser(formData) {
     // Sign up with Supabase Auth
     // Note: We handle email verification ourselves via custom emails (Gmail)
     // So we don't use Supabase's built-in email confirmation
+    const supabase = await getServerSupabase();
     const { data: authData, error: signUpError } = await supabase.auth.signUp({
       email,
       password,

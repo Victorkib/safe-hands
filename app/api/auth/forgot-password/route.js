@@ -4,7 +4,7 @@
  * Includes rate limiting to prevent abuse
  */
 
-import { supabaseAdmin } from '@/lib/supabaseClient.js';
+import { supabaseAdmin } from '@/lib/supabaseAdmin.js';
 import { createPasswordResetToken } from '@/lib/tokenService.js';
 import { sendPasswordResetEmail } from '@/lib/emailService.js';
 import { checkRateLimit, getRateLimitHeaders } from '@/lib/rateLimiter.js';

@@ -29,7 +29,7 @@ export default function HomePage() {
 
           // Redirect to appropriate dashboard
           const dashboardPath =
-            role === 'buyer_seller' ? '/dashboard/buyer' : `/dashboard/${role}`;
+            role === 'buyer_seller' ? '/dashboard/seller' : `/dashboard/${role}`;
           router.push(dashboardPath);
         } else {
           setIsAuthenticated(false);

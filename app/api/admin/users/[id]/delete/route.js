@@ -1,9 +1,7 @@
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
-import { cookies } from 'next/headers';
+import { getServerSupabase } from '@/lib/getServerSupabase';
 
 export async function DELETE(request, { params }) {
-  const cookieStore = await cookies();
-  const supabase = createRouteHandlerClient({ cookies: () => cookieStore });
+  const supabase = await getServerSupabase(request);
 
   try {
     // Verify admin
@@ -11,6 +9,8 @@ export async function DELETE(request, { params }) {
     if (!user) {
       return Response.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    const { id } = await params;
 
     const { data: profile } = await supabase
       .from('users')
@@ -21,8 +21,6 @@ export async function DELETE(request, { params }) {
     if (profile?.role !== 'admin') {
       return Response.json({ error: 'Forbidden' }, { status: 403 });
     }
-
-    const { id } = params;
 
     // Delete user
     const { error } = await supabase

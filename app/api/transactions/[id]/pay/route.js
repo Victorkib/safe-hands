@@ -12,7 +12,7 @@ const supabase = createClient(
  */
 export async function POST(request, { params }) {
   try {
-    const { id } = params;
+    const { id } = await params;
 
     // Get authorization header
     const authHeader = request.headers.get('authorization');

@@ -1,35 +1,14 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
+import { useAuth } from '@/context/AuthContext';
 
 export default function RoleBasedNav({ currentPath }) {
-  const [user, setUser] = useState(null);
-  const [userRole, setUserRole] = useState(null);
+  const { user, profile } = useAuth();
+  const userRole = profile?.role || null;
   const [showMobileMenu, setShowMobileMenu] = useState(false);
-
-  useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const { data: { user: authUser } } = await supabase.auth.getUser();
-        if (authUser) {
-          setUser(authUser);
-          
-          const { data } = await supabase
-            .from('users')
-            .select('role')
-            .eq('id', authUser.id)
-            .single();
-          
-          setUserRole(data?.role || null);
-        }
-      } catch (error) {
-        console.error('Error:', error);
-      }
-    };
-    checkAuth();
-  }, []);
 
   const handleLogout = async () => {
     try {

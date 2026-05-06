@@ -109,8 +109,15 @@ export default function CreateListing() {
         });
       }
 
+      console.log('Starting listing creation...');
+
       const { data: { session } } = await supabase.auth.getSession();
       
+      if (!session) {
+        throw new Error('No active session found');
+      }
+
+      console.log('Making API call to create listing...');
       const response = await fetch('/api/listings', {
         method: 'POST',
         headers: {
@@ -119,12 +126,15 @@ export default function CreateListing() {
         body: formData,
       });
 
+      console.log('API response status:', response.status);
       const result = await response.json();
+      console.log('API response data:', result);
 
       if (!response.ok) {
         throw new Error(result.error || 'Failed to create listing');
       }
 
+      console.log('Listing created successfully, redirecting...');
       router.push('/dashboard/listings');
     } catch (error) {
       console.error('Error creating listing:', error);

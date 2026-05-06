@@ -4,10 +4,11 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
+import { useAuth } from '@/context/AuthContext';
 
 export default function SellerDashboard() {
   const router = useRouter();
-  const [user, setUser] = useState(null);
+  const { user } = useAuth();
   const [transactions, setTransactions] = useState([]);
   const [listings, setListings] = useState([]);
   const [activeTab, setActiveTab] = useState('transactions');
@@ -26,22 +27,16 @@ export default function SellerDashboard() {
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const {
-          data: { user: authUser },
-        } = await supabase.auth.getUser();
-
-        if (!authUser) {
+        if (!user) {
           router.push('/auth/login');
           return;
         }
-
-        setUser(authUser);
 
         // Fetch seller transactions
         const { data: txns, error: txnError } = await supabase
           .from('transactions')
           .select('*')
-          .eq('seller_id', authUser.id)
+          .eq('seller_id', user.id)
           .order('created_at', { ascending: false });
 
         if (!txnError && txns) {
@@ -52,7 +47,7 @@ export default function SellerDashboard() {
         const { data: lstngs, error: listError } = await supabase
           .from('listings')
           .select('*')
-          .eq('seller_id', authUser.id)
+          .eq('seller_id', user.id)
           .order('created_at', { ascending: false });
 
         if (!listError && lstngs) {

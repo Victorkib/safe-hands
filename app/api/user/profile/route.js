@@ -6,12 +6,12 @@
 
 import { NextResponse } from 'next/server';
 import { getServerSupabase } from '@/lib/getServerSupabase';
-import { supabaseAdmin } from '@/lib/supabaseClient.js';
+import { supabaseAdmin } from '@/lib/supabaseAdmin.js';
 
 export async function GET(request) {
   try {
     // Get authenticated Supabase client
-    const supabase = getServerSupabase(request);
+    const supabase = await getServerSupabase(request);
 
     // Get the user from the session
     const {
@@ -84,7 +84,7 @@ function mergeUserData(authUser, appUser) {
 export async function PUT(request) {
   try {
     // Get authenticated Supabase client and user
-    const supabase = getServerSupabase(request);
+    const supabase = await getServerSupabase(request);
     const {
       data: { user },
       error: authError,

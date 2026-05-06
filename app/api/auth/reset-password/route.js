@@ -5,7 +5,7 @@
  */
 
 import { verifyPasswordResetToken, usePasswordResetToken } from '@/lib/tokenService.js';
-import { supabase, supabaseAdmin } from '@/lib/supabaseClient.js';
+import { supabase, supabaseAdmin } from '@/lib/supabaseAdmin.js';
 import { validatePassword } from '@/lib/validation.js';
 
 export async function POST(request) {

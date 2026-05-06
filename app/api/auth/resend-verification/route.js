@@ -4,7 +4,7 @@
  * Includes rate limiting to prevent abuse
  */
 
-import { supabaseAdmin } from '@/lib/supabaseClient.js';
+import { supabaseAdmin } from '@/lib/supabaseAdmin.js';
 import { createEmailVerificationToken } from '@/lib/tokenService.js';
 import { sendVerificationEmail } from '@/lib/emailService.js';
 import { checkRateLimit, getRateLimitHeaders } from '@/lib/rateLimiter.js';
