@@ -17,6 +17,8 @@ export default function SignUpForm() {
   const [signupEmail, setSignupEmail] = useState('');
   const [signupName, setSignupName] = useState('');
   const [resendLoading, setResendLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const [formData, setFormData] = useState({
     email: '',
@@ -367,17 +369,27 @@ export default function SignUpForm() {
             <label className="block text-sm font-semibold text-gray-900 mb-2">
               Password
             </label>
-            <input
-              type="password"
-              name="password"
-              value={formData.password}
-              onChange={handleInputChange}
-              placeholder="••••••••"
-              className={`w-full px-4 py-2.5 border rounded-lg text-sm transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                errors.password ? 'border-red-300 bg-red-50' : 'border-gray-300 bg-white'
-              }`}
-              disabled={loading}
-            />
+            <div className="relative">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                name="password"
+                value={formData.password}
+                onChange={handleInputChange}
+                placeholder="••••••••"
+                className={`w-full px-4 py-2.5 border rounded-lg text-sm transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent pr-11 ${
+                  errors.password ? 'border-red-300 bg-red-50' : 'border-gray-300 bg-white'
+                }`}
+                disabled={loading}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-900 text-sm transition"
+                disabled={loading}
+              >
+                {showPassword ? '🙈' : '👁️'}
+              </button>
+            </div>
             {formData.password && (
               <div className="mt-2.5">
                 <div className="flex justify-between items-center mb-1.5">
@@ -406,17 +418,27 @@ export default function SignUpForm() {
             <label className="block text-sm font-semibold text-gray-900 mb-2">
               Confirm Password
             </label>
-            <input
-              type="password"
-              name="confirmPassword"
-              value={formData.confirmPassword}
-              onChange={handleInputChange}
-              placeholder="••••••••"
-              className={`w-full px-4 py-2.5 border rounded-lg text-sm transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                errors.confirmPassword ? 'border-red-300 bg-red-50' : 'border-gray-300 bg-white'
-              }`}
-              disabled={loading}
-            />
+            <div className="relative">
+              <input
+                type={showConfirmPassword ? 'text' : 'password'}
+                name="confirmPassword"
+                value={formData.confirmPassword}
+                onChange={handleInputChange}
+                placeholder="••••••••"
+                className={`w-full px-4 py-2.5 border rounded-lg text-sm transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent pr-11 ${
+                  errors.confirmPassword ? 'border-red-300 bg-red-50' : 'border-gray-300 bg-white'
+                }`}
+                disabled={loading}
+              />
+              <button
+                type="button"
+                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-900 text-sm transition"
+                disabled={loading}
+              >
+                {showConfirmPassword ? '🙈' : '👁️'}
+              </button>
+            </div>
             {errors.confirmPassword && (
               <p className="text-red-600 text-xs mt-1.5">⚠ {errors.confirmPassword}</p>
             )}
