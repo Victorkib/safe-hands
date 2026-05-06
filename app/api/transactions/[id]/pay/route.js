@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { mpesaClient } from '@/lib/mpesaClient';
+import { getAuthenticatedUser, unauthorizedResponse } from '@/lib/apiAuth';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -13,27 +14,8 @@ const supabase = createClient(
 export async function POST(request, { params }) {
   try {
     const { id } = await params;
-
-    // Get authorization header
-    const authHeader = request.headers.get('authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return Response.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
-    const token = authHeader.substring(7);
-
-    // Verify token and get user
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    
-    if (authError || !user) {
-      return Response.json(
-        { error: 'Invalid token' },
-        { status: 401 }
-      );
-    }
+    const { user } = await getAuthenticatedUser(request);
+    if (!user) return unauthorizedResponse();
 
     // Get user's phone number
     const { data: userData, error: userError } = await supabase
@@ -79,7 +61,7 @@ export async function POST(request, { params }) {
     }
 
     // Check transaction status
-    if (transaction.status !== 'initiated') {
+    if (transaction.status !== 'initiated' && transaction.status !== 'seller_approved') {
       return Response.json(
         { error: `Cannot pay for transaction with status: ${transaction.status}` },
         { status: 400 }
@@ -119,7 +101,7 @@ export async function POST(request, { params }) {
       .from('transactions')
       .update({
         mpesa_ref: checkoutRequestID,
-        status: 'escrow', // Will be updated to 'escrow' when payment is confirmed via callback
+        status: 'payment_pending',
       })
       .eq('id', id);
 
@@ -134,8 +116,8 @@ export async function POST(request, { params }) {
     // Log to transaction history
     await supabase.from('transaction_history').insert({
       transaction_id: id,
-      old_status: 'initiated',
-      new_status: 'escrow',
+      old_status: transaction.status,
+      new_status: 'payment_pending',
       changed_by: user.id,
       reason: 'M-Pesa STK Push initiated',
     });

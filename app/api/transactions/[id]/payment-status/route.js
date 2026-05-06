@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { mpesaClient } from '@/lib/mpesaClient';
+import { getAuthenticatedUser, unauthorizedResponse } from '@/lib/apiAuth';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -14,27 +15,8 @@ const supabase = createClient(
 export async function GET(request, { params }) {
   try {
     const { id } = await params;
-
-    // Get authorization header
-    const authHeader = request.headers.get('authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return Response.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
-    const token = authHeader.substring(7);
-
-    // Verify token
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    
-    if (authError || !user) {
-      return Response.json(
-        { error: 'Invalid token' },
-        { status: 401 }
-      );
-    }
+    const { user } = await getAuthenticatedUser(request);
+    if (!user) return unauthorizedResponse();
 
     // Get transaction
     const { data: transaction, error: transactionError } = await supabase
@@ -101,7 +83,8 @@ export async function GET(request, { params }) {
           status: 'escrow',
           payment_confirmed_at: new Date().toISOString(),
         })
-        .eq('id', id);
+        .eq('id', id)
+        .is('payment_confirmed_at', null);
 
       if (!updateError) {
         // Log to transaction history

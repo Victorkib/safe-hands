@@ -23,6 +23,9 @@ export default function TransactionDetail() {
   const [confirmationComment, setConfirmationComment] = useState('');
   const [disputeReason, setDisputeReason] = useState('');
   const [disputeDescription, setDisputeDescription] = useState('');
+  const [sellerRequest, setSellerRequest] = useState(null);
+  const [sellerMessage, setSellerMessage] = useState('');
+  const [proposedAmount, setProposedAmount] = useState('');
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -68,6 +71,14 @@ export default function TransactionDetail() {
       }
 
       setTransaction(txn);
+
+      const { data: requestData } = await supabase
+        .from('seller_transaction_requests')
+        .select('*')
+        .eq('transaction_id', id)
+        .maybeSingle();
+
+      setSellerRequest(requestData || null);
     } catch (error) {
       console.error('Error fetching transaction:', error);
       setError('Transaction not found');
@@ -115,7 +126,7 @@ export default function TransactionDetail() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          tracking_number,
+          tracking_number: trackingNumber || null,
           delivery_proof_url: '',
         }),
       });
@@ -205,9 +216,79 @@ export default function TransactionDetail() {
     }
   };
 
+  const submitSellerDecision = async (actionType) => {
+    if (!transaction) return;
+    setActionLoading(true);
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const payload = {};
+
+      if (sellerMessage.trim()) {
+        payload.seller_message = sellerMessage.trim();
+      }
+      if (actionType === 'request-changes' && proposedAmount.trim()) {
+        payload.proposed_amount = proposedAmount.trim();
+      }
+
+      const response = await fetch(`/api/transactions/${id}/${actionType}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        alert(result.error || `Failed to ${actionType}`);
+        return;
+      }
+
+      setSellerMessage('');
+      setProposedAmount('');
+      fetchTransaction(user.id);
+    } catch (err) {
+      console.error(`${actionType} error:`, err);
+      alert('Failed to submit seller decision');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const acceptSellerChanges = async () => {
+    setActionLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch(`/api/transactions/${id}/accept-changes`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        alert(result.error || 'Failed to accept changes');
+        return;
+      }
+      fetchTransaction(user.id);
+    } catch (error) {
+      console.error('Accept changes error:', error);
+      alert('Failed to accept seller changes');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const getStatusColor = (status) => {
     const colors = {
       initiated: 'bg-gray-100 text-gray-800',
+      pending_seller_approval: 'bg-purple-100 text-purple-800',
+      seller_approved: 'bg-indigo-100 text-indigo-800',
+      seller_rejected: 'bg-rose-100 text-rose-800',
+      seller_change_requested: 'bg-orange-100 text-orange-800',
+      payment_pending: 'bg-amber-100 text-amber-800',
       escrow: 'bg-blue-100 text-blue-800',
       delivered: 'bg-yellow-100 text-yellow-800',
       released: 'bg-green-100 text-green-800',
@@ -339,13 +420,83 @@ export default function TransactionDetail() {
       <div className="bg-white rounded-lg shadow p-6">
         <h2 className="text-xl font-bold text-gray-900 mb-4">Actions</h2>
         
-        {isBuyer && transaction.status === 'initiated' && (
+        {isBuyer && (transaction.status === 'seller_approved' || transaction.status === 'initiated') && (
           <button
             onClick={() => setShowPaymentModal(true)}
             className="w-full bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition font-medium mb-2"
           >
             Pay with M-Pesa
           </button>
+        )}
+
+        {isSeller && transaction.status === 'pending_seller_approval' && (
+          <div className="space-y-3 mb-2">
+            <p className="text-sm text-gray-700">
+              Buyer is waiting for your approval before payment.
+            </p>
+            <textarea
+              value={sellerMessage}
+              onChange={(e) => setSellerMessage(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              rows="3"
+              placeholder="Optional message for buyer (or required for change request)"
+            />
+            <input
+              type="number"
+              min="1"
+              step="0.01"
+              value={proposedAmount}
+              onChange={(e) => setProposedAmount(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              placeholder="Optional proposed amount for change request"
+            />
+            <div className="grid grid-cols-1 gap-2">
+              <button
+                onClick={() => submitSellerDecision('approve')}
+                disabled={actionLoading}
+                className="w-full bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 transition font-medium"
+              >
+                Approve Transaction
+              </button>
+              <button
+                onClick={() => submitSellerDecision('request-changes')}
+                disabled={actionLoading || !sellerMessage.trim()}
+                className="w-full bg-orange-600 text-white px-6 py-3 rounded-lg hover:bg-orange-700 transition font-medium disabled:opacity-50"
+              >
+                Request Changes
+              </button>
+              <button
+                onClick={() => submitSellerDecision('reject')}
+                disabled={actionLoading}
+                className="w-full bg-red-600 text-white px-6 py-3 rounded-lg hover:bg-red-700 transition font-medium"
+              >
+                Reject Transaction
+              </button>
+            </div>
+          </div>
+        )}
+
+        {isBuyer && transaction.status === 'pending_seller_approval' && (
+          <p className="text-purple-700 text-sm mb-2">
+            Waiting for seller approval before payment can be made.
+          </p>
+        )}
+
+        {isBuyer && transaction.status === 'seller_change_requested' && (
+          <div className="text-sm text-orange-700 mb-2 p-3 bg-orange-50 rounded-lg border border-orange-200">
+            <p className="font-medium">Seller requested changes before approval.</p>
+            {sellerRequest?.seller_message && <p className="mt-1">{sellerRequest.seller_message}</p>}
+            {sellerRequest?.proposed_amount && (
+              <p className="mt-1">Proposed amount: KES {Number(sellerRequest.proposed_amount).toLocaleString()}</p>
+            )}
+            <button
+              onClick={acceptSellerChanges}
+              disabled={actionLoading}
+              className="mt-3 bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition font-medium disabled:opacity-50"
+            >
+              Accept Changes
+            </button>
+          </div>
         )}
 
         {isSeller && transaction.status === 'escrow' && (

@@ -10,6 +10,7 @@ export default function SellerDashboard() {
   const router = useRouter();
   const { user } = useAuth();
   const [transactions, setTransactions] = useState([]);
+  const [pendingApprovals, setPendingApprovals] = useState([]);
   const [listings, setListings] = useState([]);
   const [activeTab, setActiveTab] = useState('transactions');
   const [filter, setFilter] = useState('all');
@@ -43,6 +44,21 @@ export default function SellerDashboard() {
           setTransactions(txns);
         }
 
+        const { data: pendingRequests } = await supabase
+          .from('seller_transaction_requests')
+          .select(`
+            id,
+            transaction_id,
+            status,
+            created_at,
+            transactions!inner(id, amount, description, buyer_id)
+          `)
+          .eq('seller_id', user.id)
+          .eq('status', 'pending')
+          .order('created_at', { ascending: false });
+
+        setPendingApprovals(pendingRequests || []);
+
         // Fetch seller listings
         const { data: lstngs, error: listError } = await supabase
           .from('listings')
@@ -68,6 +84,11 @@ export default function SellerDashboard() {
 
   const statusColors = {
     initiated: 'bg-gray-100 text-gray-800',
+    pending_seller_approval: 'bg-purple-100 text-purple-800',
+    seller_approved: 'bg-indigo-100 text-indigo-800',
+    seller_change_requested: 'bg-orange-100 text-orange-800',
+    seller_rejected: 'bg-rose-100 text-rose-800',
+    payment_pending: 'bg-amber-100 text-amber-800',
     escrow: 'bg-blue-100 text-blue-800',
     delivered: 'bg-yellow-100 text-yellow-800',
     released: 'bg-green-100 text-green-800',
@@ -207,9 +228,40 @@ export default function SellerDashboard() {
         </Link>
       </div>
 
+      {pendingApprovals.length > 0 && (
+        <div className="bg-white border border-purple-200 rounded-xl shadow-sm p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-gray-900">Pending Approval Requests</h2>
+            <span className="text-xs font-medium bg-purple-100 text-purple-800 px-2 py-1 rounded-full">
+              {pendingApprovals.length}
+            </span>
+          </div>
+          <div className="space-y-3">
+            {pendingApprovals.slice(0, 5).map((request) => (
+              <div key={request.id} className="border border-gray-200 rounded-lg p-3 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-900">
+                    KES {Number(request.transactions?.amount || 0).toLocaleString()}
+                  </p>
+                  <p className="text-xs text-gray-600">
+                    {(request.transactions?.description || '').slice(0, 90)}
+                  </p>
+                </div>
+                <Link
+                  href={`/dashboard/transactions/${request.transaction_id}`}
+                  className="text-sm text-purple-700 hover:text-purple-800 font-semibold"
+                >
+                  Review →
+                </Link>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Filters */}
       <div className="mb-6 flex flex-wrap gap-2">
-        {['all', 'initiated', 'escrow', 'delivered', 'released', 'disputed'].map((status) => (
+        {['all', 'pending_seller_approval', 'seller_change_requested', 'seller_approved', 'payment_pending', 'escrow', 'delivered', 'released', 'disputed'].map((status) => (
           <button
             key={status}
             onClick={() => setFilter(status)}

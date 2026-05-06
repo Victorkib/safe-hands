@@ -1,13 +1,15 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { validateSignupForm, normalizePhone } from '@/lib/validation.js';
 import { signupUser } from '@/app/actions/auth.js';
 
 export default function SignUpForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const inviteToken = searchParams.get('invite') || '';
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
   const [passwordStrength, setPasswordStrength] = useState(0);
@@ -77,6 +79,7 @@ export default function SignUpForm() {
         phone: normalizedPhone,
         password: formData.password,
         role: formData.role,
+        inviteToken,
       });
 
       if (!result.success) {
@@ -349,6 +352,11 @@ export default function SignUpForm() {
               <option value="seller">Seller only</option>
               <option value="buyer_seller">Both Buyer & Seller</option>
             </select>
+            {inviteToken && (
+              <p className="text-xs text-teal-700 mt-1.5">
+                You are joining through a seller invitation. Select a seller-capable role.
+              </p>
+            )}
             {errors.role && (
               <p className="text-red-600 text-xs mt-1.5">⚠ {errors.role}</p>
             )}

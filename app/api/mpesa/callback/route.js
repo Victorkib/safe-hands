@@ -61,19 +61,20 @@ export async function POST(request) {
       // Payment successful
       const amount = CallbackMetadata.Item.find(item => item.Name === 'Amount')?.Value;
       const mpesaReceipt = CallbackMetadata.Item.find(item => item.Name === 'MpesaReceiptNumber')?.Value;
-      const transactionDate = CallbackMetadata.Item.find(item => item.Name === 'TransactionDate')?.Value;
       const phoneNumber = CallbackMetadata.Item.find(item => item.Name === 'PhoneNumber')?.Value;
 
-      // Update transaction
-      const { error: updateError } = await supabase
+      // Update transaction idempotently: only first successful callback should mutate state.
+      const { data: updatedRows, error: updateError } = await supabase
         .from('transactions')
         .update({
           status: 'escrow',
           payment_confirmed_at: new Date().toISOString(),
-          mpesa_ref: mpesaReceipt || CheckoutRequestID,
+          mpesa_receipt_number: mpesaReceipt || null,
           mpesa_phone: phoneNumber,
         })
-        .eq('id', transaction.id);
+        .eq('id', transaction.id)
+        .is('payment_confirmed_at', null)
+        .select('id');
 
       if (updateError) {
         console.error('Failed to update transaction:', updateError);
@@ -83,10 +84,18 @@ export async function POST(request) {
         });
       }
 
+      // Another callback likely completed the transition first.
+      if (!updatedRows || updatedRows.length === 0) {
+        return Response.json({
+          ResultCode: 0,
+          ResultDesc: 'Already processed',
+        });
+      }
+
       // Log to transaction history
       await supabase.from('transaction_history').insert({
         transaction_id: transaction.id,
-        old_status: 'initiated',
+        old_status: transaction.status,
         new_status: 'escrow',
         changed_by: null, // System action
         reason: `Payment confirmed via M-Pesa. Receipt: ${mpesaReceipt}`,
@@ -122,7 +131,7 @@ export async function POST(request) {
       const { error: updateError } = await supabase
         .from('transactions')
         .update({
-          status: 'cancelled',
+          status: 'initiated',
         })
         .eq('id', transaction.id);
 
@@ -133,8 +142,8 @@ export async function POST(request) {
       // Log to transaction history
       await supabase.from('transaction_history').insert({
         transaction_id: transaction.id,
-        old_status: 'initiated',
-        new_status: 'cancelled',
+        old_status: transaction.status,
+        new_status: 'initiated',
         changed_by: null,
         reason: `Payment failed: ${ResultDesc}`,
       });

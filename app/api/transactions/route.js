@@ -1,6 +1,8 @@
 import { getServerSupabase } from '@/lib/getServerSupabase';
 import { supabaseAdmin } from '@/lib/supabaseAdmin.js';
 import { validateTransactionForm } from '@/lib/validation';
+import { generateToken, hashToken } from '@/lib/tokenService';
+import { sendSellerInvitationEmail } from '@/lib/emailService';
 
 /**
  * POST /api/transactions
@@ -69,9 +71,58 @@ export async function POST(request) {
         .single();
 
       if (!sellerData) {
+        const invitationToken = generateToken(32);
+        const tokenHash = hashToken(invitationToken);
+        const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString();
+        const normalizedSellerEmail = String(seller_email).trim().toLowerCase();
+
+        const { data: invitation, error: invitationError } = await supabaseAdmin
+          .from('seller_invitations')
+          .insert({
+            email: normalizedSellerEmail,
+            invited_by_user_id: user.id,
+            token_hash: tokenHash,
+            expires_at: expiresAt,
+            status: 'pending',
+            requested_amount: parseFloat(amount),
+            requested_currency: 'KES',
+            requested_description: description,
+          })
+          .select('id')
+          .single();
+
+        if (invitationError || !invitation) {
+          return Response.json(
+            { error: 'Seller not found and invitation could not be created' },
+            { status: 500 }
+          );
+        }
+
+        const { data: buyerProfile } = await supabaseAdmin
+          .from('users')
+          .select('full_name')
+          .eq('id', user.id)
+          .single();
+
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+        const invitationLink = `${baseUrl}/auth/signup?invite=${encodeURIComponent(invitationToken)}`;
+        const emailResult = await sendSellerInvitationEmail(
+          normalizedSellerEmail,
+          buyerProfile?.full_name || 'A buyer',
+          invitationLink,
+          amount,
+          description
+        );
+
         return Response.json(
-          { error: 'Seller not found' },
-          { status: 404 }
+          {
+            success: true,
+            invitation_created: true,
+            invitation_id: invitation.id,
+            email_sent: !!emailResult?.success,
+            message: 'Seller has no account yet. Invitation sent for onboarding.',
+          },
+          { status: 202 }
         );
       }
       targetSellerId = sellerData.id;
@@ -115,7 +166,7 @@ export async function POST(request) {
         amount: parseFloat(amount),
         currency: 'KES',
         description,
-        status: 'initiated',
+        status: 'pending_seller_approval',
         payment_method: 'mpesa',
         mpesa_phone: userData.phone_number,
       })
@@ -134,16 +185,25 @@ export async function POST(request) {
     await supabaseAdmin.from('transaction_history').insert({
       transaction_id: transaction.id,
       old_status: null,
-      new_status: 'initiated',
+      new_status: 'pending_seller_approval',
       changed_by: user.id,
-      reason: 'Transaction created',
+      reason: 'Transaction created and awaiting seller approval',
+    });
+
+    await supabaseAdmin.from('seller_transaction_requests').insert({
+      transaction_id: transaction.id,
+      seller_id: targetSellerId,
+      buyer_id: user.id,
+      status: 'pending',
+      seller_message: null,
+      proposed_amount: null,
     });
 
     // Create notification for seller
     await supabaseAdmin.from('notifications').insert({
       user_id: targetSellerId,
-      title: 'New Transaction Request',
-      message: `You have a new transaction request for KES ${amount.toLocaleString()}`,
+      title: 'Transaction Approval Needed',
+      message: `You have a new transaction request awaiting approval for KES ${amount.toLocaleString()}`,
       type: 'transaction_created',
       related_transaction_id: transaction.id,
     });

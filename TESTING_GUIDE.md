@@ -283,6 +283,61 @@ After running all tests above, verify:
 
 ---
 
+## Test Suite 6: Transaction Core Flow Smoke Test
+
+### Test 6.1: Create -> Payment Pending
+**Steps:**
+1. Login as buyer and open `/dashboard/transactions/create`
+2. Create a transaction with a valid seller email
+3. Open transaction detail and click **Pay with M-Pesa**
+4. Confirm STK prompt is initiated
+5. Refresh transaction detail
+
+**Expected:** ✅ Status transitions to `payment_pending` (not `escrow`) until payment confirmation is received
+
+---
+
+### Test 6.2: Callback Success -> Escrow
+**Steps:**
+1. Complete M-Pesa payment on phone
+2. Wait for callback processing
+3. Refresh transaction detail
+4. Check payment fields in DB (`payment_confirmed_at`, `mpesa_ref`, `mpesa_receipt_number`)
+
+**Expected:** ✅ Status becomes `escrow`, `mpesa_ref` remains checkout request ID, `mpesa_receipt_number` is populated
+
+---
+
+### Test 6.3: Seller Ship Action
+**Steps:**
+1. Login as seller for the same transaction
+2. Open transaction detail
+3. Click **Mark as Shipped**
+4. Submit with and without tracking number
+
+**Expected:** ✅ No client error; request succeeds and status moves from `escrow` to `delivered`
+
+---
+
+### Test 6.4: Buyer Confirm Delivery
+**Steps:**
+1. Login back as buyer
+2. Open transaction in `delivered` status
+3. Confirm delivery with optional comment
+
+**Expected:** ✅ Status becomes `released`, completion fields are populated, seller receives funds-released notification
+
+---
+
+### Test 6.5: Callback Replay Idempotency
+**Steps:**
+1. Replay same successful callback payload (same CheckoutRequestID) via API tool/Postman
+2. Re-check transaction history and notifications
+
+**Expected:** ✅ API responds as already processed; no duplicate status transition or duplicate notifications
+
+---
+
 ## If Issues Found During Testing
 
 1. **Check console for errors** - DevTools → Console tab

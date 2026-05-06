@@ -56,7 +56,7 @@ export default function BuyerDashboard() {
   const calculateStats = (transactionData) => {
     const newStats = {
       total: transactionData.length,
-      active: transactionData.filter(t => ['initiated', 'escrow', 'delivered'].includes(t.status)).length,
+      active: transactionData.filter(t => ['initiated', 'pending_seller_approval', 'seller_approved', 'seller_change_requested', 'payment_pending', 'escrow', 'delivered'].includes(t.status)).length,
       completed: transactionData.filter(t => t.status === 'released').length,
       disputed: transactionData.filter(t => t.disputes && t.disputes.length > 0).length,
     };
@@ -71,6 +71,10 @@ export default function BuyerDashboard() {
   const getStatusColor = (status) => {
     const colors = {
       initiated: 'bg-blue-100 text-blue-800',
+      pending_seller_approval: 'bg-purple-100 text-purple-800',
+      seller_approved: 'bg-indigo-100 text-indigo-800',
+      seller_change_requested: 'bg-orange-100 text-orange-800',
+      payment_pending: 'bg-amber-100 text-amber-800',
       escrow: 'bg-yellow-100 text-yellow-800',
       delivered: 'bg-purple-100 text-purple-800',
       released: 'bg-green-100 text-green-800',
@@ -355,6 +359,10 @@ export default function BuyerDashboard() {
                 >
                   <option value="all">All Transactions</option>
                   <option value="initiated">Initiated</option>
+                  <option value="pending_seller_approval">Awaiting Seller Approval</option>
+                  <option value="seller_approved">Seller Approved</option>
+                  <option value="seller_change_requested">Change Requested</option>
+                  <option value="payment_pending">Payment Pending</option>
                   <option value="escrow">In Escrow</option>
                   <option value="delivered">Delivered</option>
                   <option value="released">Completed</option>

@@ -40,11 +40,25 @@ CREATE TABLE IF NOT EXISTS transactions (
   currency VARCHAR(3) DEFAULT 'KES',
   description TEXT NOT NULL,
   status VARCHAR(50) NOT NULL DEFAULT 'initiated' CHECK (
-    status IN ('initiated', 'escrow', 'delivered', 'released', 'disputed', 'refunded', 'cancelled')
+    status IN (
+      'initiated',
+      'pending_seller_approval',
+      'seller_approved',
+      'seller_rejected',
+      'seller_change_requested',
+      'payment_pending',
+      'escrow',
+      'delivered',
+      'released',
+      'disputed',
+      'refunded',
+      'cancelled'
+    )
   ),
   
   -- Payment details
   mpesa_ref VARCHAR(100), -- M-Pesa reference number
+  mpesa_receipt_number VARCHAR(100), -- M-Pesa receipt number after successful payment
   mpesa_phone VARCHAR(20), -- Phone number used for M-Pesa
   payment_method VARCHAR(50) DEFAULT 'mpesa', -- 'mpesa', 'bank_transfer', etc.
   payment_confirmed_at TIMESTAMP WITH TIME ZONE,
@@ -69,6 +83,7 @@ CREATE INDEX IF NOT EXISTS idx_transactions_seller ON transactions(seller_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_status ON transactions(status);
 CREATE INDEX IF NOT EXISTS idx_transactions_created ON transactions(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_transactions_mpesa_ref ON transactions(mpesa_ref);
+CREATE INDEX IF NOT EXISTS idx_transactions_mpesa_receipt_number ON transactions(mpesa_receipt_number);
 
 -- ===== TRANSACTION HISTORY TABLE =====
 -- For audit trail: logs every status change
@@ -84,6 +99,50 @@ CREATE TABLE IF NOT EXISTS transaction_history (
 
 CREATE INDEX IF NOT EXISTS idx_transaction_history_tx ON transaction_history(transaction_id);
 CREATE INDEX IF NOT EXISTS idx_transaction_history_created ON transaction_history(created_at DESC);
+
+-- ===== SELLER TRANSACTION REQUESTS =====
+CREATE TABLE IF NOT EXISTS seller_transaction_requests (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  transaction_id UUID NOT NULL REFERENCES transactions(id) ON DELETE CASCADE UNIQUE,
+  seller_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  buyer_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  status VARCHAR(40) NOT NULL DEFAULT 'pending' CHECK (
+    status IN ('pending', 'approved', 'rejected', 'change_requested')
+  ),
+  seller_message TEXT,
+  proposed_amount DECIMAL(15, 2),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_seller_tx_requests_seller
+  ON seller_transaction_requests(seller_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_seller_tx_requests_buyer
+  ON seller_transaction_requests(buyer_id, created_at DESC);
+
+-- ===== SELLER INVITATIONS =====
+CREATE TABLE IF NOT EXISTS seller_invitations (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  email VARCHAR(255) NOT NULL,
+  invited_by_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash VARCHAR(128) NOT NULL UNIQUE,
+  expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+  status VARCHAR(30) NOT NULL DEFAULT 'pending' CHECK (
+    status IN ('pending', 'accepted', 'expired', 'cancelled')
+  ),
+  requested_amount DECIMAL(15, 2) NOT NULL CHECK (requested_amount > 0),
+  requested_currency VARCHAR(3) NOT NULL DEFAULT 'KES',
+  requested_description TEXT NOT NULL,
+  accepted_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  accepted_at TIMESTAMP WITH TIME ZONE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_seller_invitations_email_status
+  ON seller_invitations(email, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_seller_invitations_inviter
+  ON seller_invitations(invited_by_user_id, created_at DESC);
 
 -- ===== DISPUTES TABLE =====
 CREATE TABLE IF NOT EXISTS disputes (
@@ -192,6 +251,12 @@ CREATE TRIGGER disputes_updated_at BEFORE UPDATE ON disputes
 CREATE TRIGGER ratings_updated_at BEFORE UPDATE ON ratings
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+CREATE TRIGGER seller_transaction_requests_updated_at BEFORE UPDATE ON seller_transaction_requests
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER seller_invitations_updated_at BEFORE UPDATE ON seller_invitations
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
 -- ===== ROW LEVEL SECURITY (RLS) POLICIES =====
 -- Enable RLS on sensitive tables
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
@@ -200,6 +265,8 @@ ALTER TABLE disputes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE transaction_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ratings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE seller_transaction_requests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE seller_invitations ENABLE ROW LEVEL SECURITY;
 
 -- Users can view their own profile OR if they are admin (using auth.uid() directly to avoid recursion)
 -- Note: We use a security definer function to check admin status safely
@@ -272,6 +339,34 @@ CREATE POLICY "Admins can update disputes" ON disputes
       WHERE u.id = auth.uid()::uuid AND u.role = 'admin'
     )
   );
+
+-- Users can view approval requests they are part of
+CREATE POLICY "Users can view their seller transaction requests" ON seller_transaction_requests
+  FOR SELECT USING (
+    seller_id = auth.uid()::uuid OR
+    buyer_id = auth.uid()::uuid OR
+    EXISTS (
+      SELECT 1 FROM users u
+      WHERE u.id = auth.uid()::uuid AND u.role = 'admin'
+    )
+  );
+
+-- System-level inserts for approval requests
+CREATE POLICY "System can insert seller transaction requests" ON seller_transaction_requests
+  FOR INSERT WITH CHECK (true);
+
+CREATE POLICY "Users can view their seller invitations" ON seller_invitations
+  FOR SELECT USING (
+    invited_by_user_id = auth.uid()::uuid OR
+    accepted_by_user_id = auth.uid()::uuid OR
+    EXISTS (
+      SELECT 1 FROM users u
+      WHERE u.id = auth.uid()::uuid AND u.role = 'admin'
+    )
+  );
+
+CREATE POLICY "System can insert seller invitations" ON seller_invitations
+  FOR INSERT WITH CHECK (true);
 
 -- ===== COMMENTS (Documentation) =====
 COMMENT ON TABLE users IS 'Stores user account information, roles, and KYC status';

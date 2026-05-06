@@ -106,6 +106,12 @@ export default function CreateTransaction() {
       const result = await response.json();
       console.log('API response data:', result);
 
+      if (response.status === 202 && result.invitation_created) {
+        alert('Seller not found yet. Invitation sent successfully. You will be notified when they join.');
+        router.push('/dashboard/buyer');
+        return;
+      }
+
       if (!response.ok) {
         throw new Error(result.error || 'Failed to create transaction');
       }
