@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/context/AuthContext';
@@ -14,7 +15,8 @@ const statusColors = {
 };
 
 export default function AdminDisputesPage() {
-  const { profile } = useAuth();
+  const router = useRouter();
+  const { profile, loading: authLoading } = useAuth();
   const [disputes, setDisputes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -26,17 +28,17 @@ export default function AdminDisputesPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [actionMessage, setActionMessage] = useState(null);
 
-  // Check admin access
+  // Check admin access and fetch disputes
   useEffect(() => {
-    if (profile && profile.role !== 'admin') {
-      window.location.href = '/dashboard';
+    if (authLoading) return;
+    
+    if (!profile || profile.role !== 'admin') {
+      router.push('/dashboard');
+      return;
     }
-  }, [profile]);
-
-  // Fetch disputes
-  useEffect(() => {
+    
     fetchDisputes();
-  }, []);
+  }, [profile, authLoading, router]);
 
   const fetchDisputes = async () => {
     setLoading(true);

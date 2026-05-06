@@ -54,7 +54,7 @@ export default function CreateListing() {
       }
     };
     checkAuth();
-  }, [router]);
+  }, []);
 
   const fetchCategories = async () => {
     const { data, error } = await supabase

@@ -25,6 +25,7 @@ export default function DisputeDetail() {
   useEffect(() => {
     const checkAuth = async () => {
       try {
+        if (!id) return;
         const { data: { user: authUser } } = await supabase.auth.getUser();
         if (!authUser) {
           router.push('/auth/login');
@@ -44,11 +45,14 @@ export default function DisputeDetail() {
       } catch (error) {
         console.error('Error:', error);
         setError('Failed to load dispute');
+        setLoading(false);
       } finally {
         setLoading(false);
       }
     };
-    checkAuth();
+    if (id) {
+      checkAuth();
+    }
   }, [id, router]);
 
   const fetchDispute = async (userId) => {

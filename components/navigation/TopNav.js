@@ -33,9 +33,8 @@ export default function TopNav() {
       case 'admin':
         return '/dashboard/admin';
       case 'seller':
-        return '/dashboard/seller';
       case 'buyer_seller':
-        return '/dashboard/buyer';
+        return '/dashboard/seller';
       default:
         return '/dashboard/buyer';
     }

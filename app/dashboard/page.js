@@ -46,7 +46,7 @@ export default function DashboardRedirect() {
     };
 
     redirectBasedOnRole();
-  }, [router]);
+  }, [router, user, profile]);
 
   if (isLoading) {
     return (

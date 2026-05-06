@@ -68,7 +68,7 @@ export default function ProfilePage() {
 
   useEffect(() => {
     fetchProfile();
-  }, [router]);
+  }, []);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;

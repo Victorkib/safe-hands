@@ -61,7 +61,7 @@ export default function SellerDashboard() {
     };
 
     checkAuth();
-  }, [router]);
+  }, [user, router]);
 
   const filteredTransactions =
     filter === 'all' ? transactions : transactions.filter((tx) => tx.status === filter);

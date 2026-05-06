@@ -1,12 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/context/AuthContext';
 
 export default function AdminUsersPage() {
-  const { profile } = useAuth();
+  const router = useRouter();
+  const { profile, loading: authLoading } = useAuth();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -19,17 +21,17 @@ export default function AdminUsersPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [actionMessage, setActionMessage] = useState(null);
 
-  // Check admin access
+  // Check admin access and fetch users
   useEffect(() => {
-    if (profile && profile.role !== 'admin') {
-      window.location.href = '/dashboard';
+    if (authLoading) return;
+    
+    if (!profile || profile.role !== 'admin') {
+      router.push('/dashboard');
+      return;
     }
-  }, [profile]);
-
-  // Fetch users
-  useEffect(() => {
+    
     fetchUsers();
-  }, []);
+  }, [profile, authLoading, router]);
 
   const fetchUsers = async () => {
     setLoading(true);

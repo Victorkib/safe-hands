@@ -41,7 +41,9 @@ export default function TransactionDetail() {
       }
     };
 
-    checkAuth();
+    if (id) {
+      checkAuth();
+    }
   }, [id, router]);
 
   const fetchTransaction = async (userId) => {

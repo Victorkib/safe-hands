@@ -32,6 +32,7 @@ export default function EditListing() {
   useEffect(() => {
     const checkAuth = async () => {
       try {
+        if (!id) return;
         const { data: { user: authUser } } = await supabase.auth.getUser();
         if (!authUser) {
           router.push('/auth/login');
@@ -47,7 +48,9 @@ export default function EditListing() {
         setLoading(false);
       }
     };
-    checkAuth();
+    if (id) {
+      checkAuth();
+    }
   }, [id, router]);
 
   const fetchListing = async (userId) => {

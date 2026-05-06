@@ -51,7 +51,7 @@ export default function BuyerDashboard() {
     };
 
     fetchTransactions();
-  }, []);
+  }, [user]);
 
   const calculateStats = (transactionData) => {
     const newStats = {
