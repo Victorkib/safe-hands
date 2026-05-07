@@ -118,10 +118,11 @@ export default function SellerDashboard() {
 
   return (
     <div className="space-y-8">
-      {/* Header */}
-      <div className="flex flex-col gap-2">
-        <h1 className="text-3xl font-bold text-gray-900">Welcome Back, Seller</h1>
-        <p className="text-gray-600">Manage your listings and track your earnings</p>
+      <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-emerald-600 via-teal-600 to-cyan-600 text-white p-8 shadow-lg">
+        <h1 className="text-3xl font-bold tracking-tight">Welcome Back, Seller</h1>
+        <p className="text-emerald-100 mt-2 max-w-2xl">
+          Approve buyer requests faster, ship with evidence, and stay on top of active payouts.
+        </p>
       </div>
 
       {/* Stats Cards */}
@@ -277,7 +278,7 @@ export default function SellerDashboard() {
       </div>
 
       {/* Transactions List */}
-      <div className="bg-white rounded-lg shadow overflow-hidden">
+      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
         {filteredTransactions.length === 0 ? (
           <div className="p-8 text-center">
             <p className="text-gray-600">No transactions found</p>
@@ -288,7 +289,7 @@ export default function SellerDashboard() {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-gray-50 border-b">
+              <thead className="bg-slate-50 border-b border-slate-200">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">
                     Transaction ID

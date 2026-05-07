@@ -249,10 +249,11 @@ export default function BuyerDashboard() {
 
   return (
       <div className="space-y-8">
-        {/* Header */}
-        <div className="flex flex-col gap-2">
-          <h1 className="text-3xl font-bold text-gray-900">Welcome Back, Buyer</h1>
-          <p className="text-gray-600">Manage your escrow transactions and find items you love</p>
+        <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-indigo-600 via-blue-600 to-cyan-600 text-white p-8 shadow-lg">
+          <h1 className="text-3xl font-bold tracking-tight">Welcome Back, Buyer</h1>
+          <p className="text-blue-100 mt-2 max-w-2xl">
+            Track every escrow stage, confirm delivery with confidence, and resolve issues early if needed.
+          </p>
         </div>
 
         {/* Stats Cards */}
@@ -346,7 +347,7 @@ export default function BuyerDashboard() {
         </div>
 
         {/* Transactions Table */}
-        <div className="bg-white border border-gray-200 rounded-xl shadow-sm">
+        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
           <div className="p-6 border-b border-gray-200">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <h2 className="text-xl font-bold text-gray-900">Recent Transactions</h2>
@@ -375,7 +376,7 @@ export default function BuyerDashboard() {
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="bg-gray-50 border-b border-gray-200">
+                <tr className="bg-slate-50 border-b border-slate-200">
                   <th className="text-left px-6 py-4 text-xs font-semibold text-gray-700 uppercase tracking-wider">Transaction</th>
                   <th className="text-left px-6 py-4 text-xs font-semibold text-gray-700 uppercase tracking-wider">Seller</th>
                   <th className="text-left px-6 py-4 text-xs font-semibold text-gray-700 uppercase tracking-wider">Amount</th>
@@ -412,7 +413,7 @@ export default function BuyerDashboard() {
                   </tr>
                 ) : (
                   filteredTransactions.map((transaction) => (
-                    <tr key={transaction.id} className="border-b border-gray-200 hover:bg-gray-50 transition-colors duration-150">
+                    <tr key={transaction.id} className="border-b border-slate-200 hover:bg-slate-50 transition-colors duration-150">
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2">
                           <span className="font-mono text-sm text-gray-700 font-semibold">

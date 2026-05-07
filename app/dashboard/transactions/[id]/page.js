@@ -4,14 +4,13 @@ import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
-import { useAuth } from '@/context/AuthContext';
 
 export default function TransactionDetail() {
   const router = useRouter();
   const params = useParams();
   const { id } = params;
-  const { user, loading: authLoading } = useAuth();
   
+  const [user, setUser] = useState(null);
   const [transaction, setTransaction] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -27,64 +26,33 @@ export default function TransactionDetail() {
   const [sellerRequest, setSellerRequest] = useState(null);
   const [sellerMessage, setSellerMessage] = useState('');
   const [proposedAmount, setProposedAmount] = useState('');
-  
-  // Evidence-related state
-  const [evidence, setEvidence] = useState([]);
   const [courier, setCourier] = useState('');
   const [shippingNotes, setShippingNotes] = useState('');
   const [conditionRating, setConditionRating] = useState(5);
   const [itemMatchesDescription, setItemMatchesDescription] = useState(true);
-  
-  // Dispute window countdown
-  const [timeRemaining, setTimeRemaining] = useState(null);
+  const [evidenceTimeline, setEvidenceTimeline] = useState([]);
 
-  // Countdown timer for dispute window
   useEffect(() => {
-    if (!transaction?.auto_release_date || transaction.status !== 'delivered') {
-      setTimeRemaining(null);
-      return;
-    }
-
-    const calculateTimeRemaining = () => {
-      const now = new Date().getTime();
-      const releaseTime = new Date(transaction.auto_release_date).getTime();
-      const diff = releaseTime - now;
-
-      if (diff <= 0) {
-        setTimeRemaining({ expired: true, text: 'Expired', hours: 0, minutes: 0, seconds: 0 });
-        return;
+    const checkAuth = async () => {
+      try {
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        if (!authUser) {
+          router.push('/auth/login');
+          return;
+        }
+        setUser(authUser);
+        fetchTransaction(authUser.id);
+      } catch (error) {
+        console.error('Error:', error);
+        setError('Failed to load transaction');
+        setLoading(false);
       }
-
-      const hours = Math.floor(diff / (1000 * 60 * 60));
-      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-      const seconds = Math.floor((diff % (1000 * 60)) / 1000);
-
-      setTimeRemaining({
-        expired: false,
-        hours,
-        minutes,
-        seconds,
-        text: `${hours}h ${minutes}m ${seconds}s`,
-        isUrgent: hours < 24,
-        isCritical: hours < 6,
-      });
     };
 
-    calculateTimeRemaining();
-    const interval = setInterval(calculateTimeRemaining, 1000);
-
-    return () => clearInterval(interval);
-  }, [transaction?.auto_release_date, transaction?.status]);
-
-  useEffect(() => {
-    if (!id || authLoading) return;
-    if (!user) {
-      router.push('/auth/login');
-      setLoading(false);
-      return;
+    if (id) {
+      checkAuth();
     }
-    fetchTransaction(user.id);
-  }, [id, authLoading, user, router]);
+  }, [id, router]);
 
   const fetchTransaction = async (userId) => {
     try {
@@ -117,8 +85,16 @@ export default function TransactionDetail() {
 
       setSellerRequest(requestData || null);
 
-      // Fetch evidence
-      fetchEvidence();
+      const { data: { session } } = await supabase.auth.getSession();
+      const evidenceResponse = await fetch(`/api/transactions/${id}/evidence`, {
+        headers: {
+          'Authorization': `Bearer ${session?.access_token || ''}`,
+        },
+      });
+      if (evidenceResponse.ok) {
+        const evidenceData = await evidenceResponse.json();
+        setEvidenceTimeline(evidenceData.evidence || []);
+      }
     } catch (error) {
       console.error('Error fetching transaction:', error);
       setError('Transaction not found');
@@ -127,36 +103,18 @@ export default function TransactionDetail() {
     }
   };
 
-  const fetchEvidence = async () => {
+  const initiatePayment = async () => {
+    setActionLoading(true);
     try {
-      const response = await fetch(`/api/transactions/${id}/evidence`, {
-        credentials: 'same-origin',
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch(`/api/transactions/${id}/pay`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+        },
       });
 
       const result = await response.json();
-      if (result.success) {
-        setEvidence(result.evidence || []);
-      }
-    } catch (error) {
-      console.error('Error fetching evidence:', error);
-    }
-  };
-
-  const initiatePayment = async () => {
-    setActionLoading(true);
-    let timeoutId = null;
-    try {
-      const controller = new AbortController();
-      timeoutId = setTimeout(() => controller.abort(), 20000);
-      const response = await fetch(`/api/transactions/${id}/pay`, {
-        method: 'POST',
-        credentials: 'same-origin',
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-      timeoutId = null;
-
-      const result = await response.json().catch(() => ({}));
       
       if (result.success) {
         alert(result.message);
@@ -167,37 +125,32 @@ export default function TransactionDetail() {
       }
     } catch (error) {
       console.error('Payment error:', error);
-      alert(error?.name === 'AbortError' ? 'Payment request timed out. Please try again.' : 'Failed to initiate payment');
+      alert('Failed to initiate payment');
     } finally {
-      if (timeoutId) clearTimeout(timeoutId);
       setActionLoading(false);
     }
   };
 
   const markAsShipped = async () => {
     setActionLoading(true);
-    let timeoutId = null;
     try {
-      const controller = new AbortController();
-      timeoutId = setTimeout(() => controller.abort(), 20000);
+      const { data: { session } } = await supabase.auth.getSession();
       const response = await fetch(`/api/transactions/${id}/ship`, {
         method: 'POST',
         headers: {
+          'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           tracking_number: trackingNumber || null,
           courier: courier || null,
           notes: shippingNotes || null,
+          photos: [],
           delivery_proof_url: '',
         }),
-        credentials: 'same-origin',
-        signal: controller.signal,
       });
-      clearTimeout(timeoutId);
-      timeoutId = null;
 
-      const result = await response.json().catch(() => ({}));
+      const result = await response.json();
       
       if (result.success) {
         alert(result.message);
@@ -211,65 +164,56 @@ export default function TransactionDetail() {
       }
     } catch (error) {
       console.error('Shipping error:', error);
-      alert(error?.name === 'AbortError' ? 'Shipping request timed out. Please try again.' : 'Failed to mark as shipped');
+      alert('Failed to mark as shipped');
     } finally {
-      if (timeoutId) clearTimeout(timeoutId);
       setActionLoading(false);
     }
   };
 
   const confirmDelivery = async () => {
     setActionLoading(true);
-    let timeoutId = null;
     try {
-      const controller = new AbortController();
-      timeoutId = setTimeout(() => controller.abort(), 20000);
+      const { data: { session } } = await supabase.auth.getSession();
       const response = await fetch(`/api/transactions/${id}/confirm-delivery`, {
         method: 'POST',
         headers: {
+          'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           confirmation_comment: confirmationComment,
           condition_rating: conditionRating,
           item_matches_description: itemMatchesDescription,
+          photos: [],
         }),
-        credentials: 'same-origin',
-        signal: controller.signal,
       });
-      clearTimeout(timeoutId);
-      timeoutId = null;
 
-      const result = await response.json().catch(() => ({}));
+      const result = await response.json();
       
       if (result.success) {
         alert(result.message);
         setShowConfirmModal(false);
         setConfirmationComment('');
-        setConditionRating(5);
-        setItemMatchesDescription(true);
         fetchTransaction(user.id);
       } else {
         alert(result.error || 'Failed to confirm delivery');
       }
     } catch (error) {
       console.error('Confirmation error:', error);
-      alert(error?.name === 'AbortError' ? 'Confirmation request timed out. Please try again.' : 'Failed to confirm delivery');
+      alert('Failed to confirm delivery');
     } finally {
-      if (timeoutId) clearTimeout(timeoutId);
       setActionLoading(false);
     }
   };
 
   const handleRaiseDispute = async () => {
     setActionLoading(true);
-    let timeoutId = null;
     try {
-      const controller = new AbortController();
-      timeoutId = setTimeout(() => controller.abort(), 20000);
+      const { data: { session } } = await supabase.auth.getSession();
       const response = await fetch('/api/disputes', {
         method: 'POST',
         headers: {
+          'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -277,13 +221,9 @@ export default function TransactionDetail() {
           reason: disputeReason,
           description: disputeDescription,
         }),
-        credentials: 'same-origin',
-        signal: controller.signal,
       });
-      clearTimeout(timeoutId);
-      timeoutId = null;
 
-      const result = await response.json().catch(() => ({}));
+      const result = await response.json();
       
       if (result.success) {
         alert('Dispute raised successfully');
@@ -296,9 +236,8 @@ export default function TransactionDetail() {
       }
     } catch (error) {
       console.error('Dispute error:', error);
-      alert(error?.name === 'AbortError' ? 'Dispute request timed out. Please try again.' : 'Failed to raise dispute');
+      alert('Failed to raise dispute');
     } finally {
-      if (timeoutId) clearTimeout(timeoutId);
       setActionLoading(false);
     }
   };
@@ -306,9 +245,9 @@ export default function TransactionDetail() {
   const submitSellerDecision = async (actionType) => {
     if (!transaction) return;
     setActionLoading(true);
-    let timeoutId = null;
 
     try {
+      const { data: { session } } = await supabase.auth.getSession();
       const payload = {};
 
       if (sellerMessage.trim()) {
@@ -318,21 +257,16 @@ export default function TransactionDetail() {
         payload.proposed_amount = proposedAmount.trim();
       }
 
-      const controller = new AbortController();
-      timeoutId = setTimeout(() => controller.abort(), 20000);
       const response = await fetch(`/api/transactions/${id}/${actionType}`, {
         method: 'POST',
         headers: {
+          'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(payload),
-        credentials: 'same-origin',
-        signal: controller.signal,
       });
-      clearTimeout(timeoutId);
-      timeoutId = null;
 
-      const result = await response.json().catch(() => ({}));
+      const result = await response.json();
       if (!response.ok || !result.success) {
         alert(result.error || `Failed to ${actionType}`);
         return;
@@ -343,27 +277,23 @@ export default function TransactionDetail() {
       fetchTransaction(user.id);
     } catch (err) {
       console.error(`${actionType} error:`, err);
-      alert(err?.name === 'AbortError' ? 'Request timed out. Please try again.' : 'Failed to submit seller decision');
+      alert('Failed to submit seller decision');
     } finally {
-      if (timeoutId) clearTimeout(timeoutId);
       setActionLoading(false);
     }
   };
 
   const acceptSellerChanges = async () => {
     setActionLoading(true);
-    let timeoutId = null;
     try {
-      const controller = new AbortController();
-      timeoutId = setTimeout(() => controller.abort(), 20000);
+      const { data: { session } } = await supabase.auth.getSession();
       const response = await fetch(`/api/transactions/${id}/accept-changes`, {
         method: 'POST',
-        credentials: 'same-origin',
-        signal: controller.signal,
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+        },
       });
-      clearTimeout(timeoutId);
-      timeoutId = null;
-      const result = await response.json().catch(() => ({}));
+      const result = await response.json();
       if (!response.ok || !result.success) {
         alert(result.error || 'Failed to accept changes');
         return;
@@ -371,9 +301,8 @@ export default function TransactionDetail() {
       fetchTransaction(user.id);
     } catch (error) {
       console.error('Accept changes error:', error);
-      alert(error?.name === 'AbortError' ? 'Request timed out. Please try again.' : 'Failed to accept seller changes');
+      alert('Failed to accept seller changes');
     } finally {
-      if (timeoutId) clearTimeout(timeoutId);
       setActionLoading(false);
     }
   };
@@ -396,9 +325,31 @@ export default function TransactionDetail() {
     return colors[status] || 'bg-gray-100 text-gray-800';
   };
 
+  const flowStages = [
+    'pending_seller_approval',
+    'seller_approved',
+    'payment_pending',
+    'escrow',
+    'delivered',
+    'released',
+  ];
+
+  const currentStageIndex = Math.max(flowStages.indexOf(transaction?.status), 0);
+  const progressPercent = transaction?.status === 'released'
+    ? 100
+    : Math.max(((currentStageIndex + 1) / flowStages.length) * 100, 10);
+
+  const stageLabelMap = {
+    pending_seller_approval: 'Awaiting Seller Approval',
+    seller_approved: 'Seller Approved',
+    payment_pending: 'Payment Pending',
+    escrow: 'Funds in Escrow',
+    delivered: 'Delivered',
+    released: 'Completed',
+  };
+
   const isBuyer = user && transaction && transaction.buyer_id === user.id;
   const isSeller = user && transaction && transaction.seller_id === user.id;
-  const userRole = user?.user_metadata?.role || 'buyer';
 
   if (loading) {
     return (
@@ -416,157 +367,63 @@ export default function TransactionDetail() {
 
   return (
     <>
-      {/* Dispute Window Banner */}
-      {transaction.status === 'delivered' && timeRemaining && !timeRemaining.expired && (
-        <div className={`rounded-lg shadow p-4 mb-6 ${
-          timeRemaining.isCritical 
-            ? 'bg-red-50 border-2 border-red-400' 
-            : timeRemaining.isUrgent 
-              ? 'bg-orange-50 border-2 border-orange-400'
-              : 'bg-blue-50 border-2 border-blue-400'
-        }`}>
-          <div className="flex items-center justify-between flex-wrap gap-4">
-            <div className="flex items-center gap-3">
-              <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
-                timeRemaining.isCritical 
-                  ? 'bg-red-100 text-red-600' 
-                  : timeRemaining.isUrgent 
-                    ? 'bg-orange-100 text-orange-600'
-                    : 'bg-blue-100 text-blue-600'
-              }`}>
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-              <div>
-                <h3 className={`font-bold ${
-                  timeRemaining.isCritical 
-                    ? 'text-red-800' 
-                    : timeRemaining.isUrgent 
-                      ? 'text-orange-800'
-                      : 'text-blue-800'
-                }`}>
-                  {timeRemaining.isCritical 
-                    ? 'URGENT: Dispute Window Closing Soon!' 
-                    : timeRemaining.isUrgent 
-                      ? 'Dispute Window Closing in 24h'
-                      : 'Dispute Window Active'}
-                </h3>
-                <p className={`text-sm ${
-                  timeRemaining.isCritical 
-                    ? 'text-red-700' 
-                    : timeRemaining.isUrgent 
-                      ? 'text-orange-700'
-                      : 'text-blue-700'
-                }`}>
-                  {isBuyer 
-                    ? 'Confirm delivery or raise a dispute before funds are automatically released.' 
-                    : 'Buyer has until the timer expires to confirm or dispute.'}
-                </p>
-              </div>
-            </div>
-            <div className="text-center">
-              <div className={`text-2xl font-mono font-bold ${
-                timeRemaining.isCritical 
-                  ? 'text-red-600' 
-                  : timeRemaining.isUrgent 
-                    ? 'text-orange-600'
-                    : 'text-blue-600'
-              }`}>
-                {String(timeRemaining.hours).padStart(2, '0')}:
-                {String(timeRemaining.minutes).padStart(2, '0')}:
-                {String(timeRemaining.seconds).padStart(2, '0')}
-              </div>
-              <p className="text-xs text-gray-600 uppercase">Time Remaining</p>
-            </div>
-          </div>
-          {isBuyer && (
-            <div className="mt-4 flex gap-2 flex-wrap">
-              <button
-                onClick={() => setShowConfirmModal(true)}
-                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-sm font-medium"
-              >
-                Confirm Delivery
-              </button>
-              <button
-                onClick={() => setShowDisputeModal(true)}
-                className={`px-4 py-2 rounded-lg transition text-sm font-medium ${
-                  timeRemaining.isCritical 
-                    ? 'bg-red-600 text-white hover:bg-red-700 animate-pulse' 
-                    : 'bg-red-100 text-red-700 hover:bg-red-200'
-                }`}
-              >
-                Raise Dispute
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Expired Dispute Window Notice */}
-      {transaction.status === 'delivered' && timeRemaining?.expired && (
-        <div className="bg-gray-100 border-2 border-gray-300 rounded-lg shadow p-4 mb-6">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-gray-200 text-gray-600 flex items-center justify-center">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-            <div>
-              <h3 className="font-bold text-gray-800">Dispute Window Expired</h3>
-              <p className="text-sm text-gray-600">
-                Funds will be released to the seller shortly via automatic processing.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="bg-white rounded-lg shadow p-6 mb-6">
+      <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 rounded-2xl shadow-lg p-6 md:p-8 mb-6 text-white">
         <div className="flex justify-between items-start mb-4">
           <div>
-            <p className="text-sm text-gray-600">Transaction ID</p>
+            <p className="text-xs uppercase tracking-wide text-slate-300">Transaction ID</p>
             <p className="font-mono text-lg">{transaction.id.slice(0, 8)}...</p>
           </div>
-          <span className={`px-4 py-2 rounded-full text-sm font-medium ${getStatusColor(transaction.status)}`}>
+          <span className={`px-4 py-2 rounded-full text-sm font-semibold ${getStatusColor(transaction.status)}`}>
             {transaction.status.toUpperCase()}
           </span>
         </div>
 
-        <div className="grid grid-cols-2 gap-4 mb-4">
+        <div className="grid grid-cols-2 gap-4 mb-5">
           <div>
-            <p className="text-sm text-gray-600">Amount</p>
-            <p className="text-2xl font-bold text-gray-900">KES {transaction.amount.toLocaleString()}</p>
+            <p className="text-xs uppercase tracking-wide text-slate-300">Amount</p>
+            <p className="text-3xl font-bold">KES {transaction.amount.toLocaleString()}</p>
           </div>
           <div>
-            <p className="text-sm text-gray-600">Created</p>
-            <p className="text-gray-900">{new Date(transaction.created_at).toLocaleString()}</p>
+            <p className="text-xs uppercase tracking-wide text-slate-300">Created</p>
+            <p className="text-slate-100">{new Date(transaction.created_at).toLocaleString()}</p>
           </div>
         </div>
 
-        <div className="mb-4">
-          <p className="text-sm text-gray-600">Description</p>
-          <p className="text-gray-900">{transaction.description}</p>
+        <div className="mb-5">
+          <p className="text-xs uppercase tracking-wide text-slate-300">Description</p>
+          <p className="text-slate-100">{transaction.description}</p>
+        </div>
+
+        <div className="mb-5">
+          <div className="h-2 rounded-full bg-slate-700 overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-sky-400 via-indigo-400 to-violet-400 transition-all duration-500"
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
+          <p className="mt-2 text-sm text-slate-300">
+            Current stage: {stageLabelMap[transaction.status] || transaction.status}
+          </p>
         </div>
 
         {/* Parties */}
-        <div className="border-t pt-4">
+        <div className="border-t border-slate-700 pt-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <p className="text-sm text-gray-600 mb-1">Buyer</p>
-              <p className="font-medium text-gray-900">{transaction.buyer?.full_name || 'Loading...'}</p>
-              <p className="text-sm text-gray-600">{transaction.buyer?.email || 'Loading...'}</p>
+              <p className="text-xs uppercase tracking-wide text-slate-300 mb-1">Buyer</p>
+              <p className="font-medium text-white">{transaction.buyer?.full_name || 'Loading...'}</p>
+              <p className="text-sm text-slate-300">{transaction.buyer?.email || 'Loading...'}</p>
             </div>
             <div>
-              <p className="text-sm text-gray-600 mb-1">Seller</p>
-              <p className="font-medium text-gray-900">{transaction.seller?.full_name || 'Loading...'}</p>
-              <p className="text-sm text-gray-600">{transaction.seller?.email || 'Loading...'}</p>
+              <p className="text-xs uppercase tracking-wide text-slate-300 mb-1">Seller</p>
+              <p className="font-medium text-white">{transaction.seller?.full_name || 'Loading...'}</p>
+              <p className="text-sm text-slate-300">{transaction.seller?.email || 'Loading...'}</p>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="bg-white rounded-lg shadow p-6 mb-6">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 mb-6">
         <h2 className="text-xl font-bold text-gray-900 mb-4">Payment Information</h2>
         <div className="grid grid-cols-2 gap-4">
           <div>
@@ -590,17 +447,9 @@ export default function TransactionDetail() {
 
       {/* Delivery Information */}
       {(transaction.status === 'delivered' || transaction.status === 'released') && (
-        <div className="bg-white rounded-lg shadow p-6 mb-6">
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 mb-6">
           <h2 className="text-xl font-bold text-gray-900 mb-4">Delivery Information</h2>
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <p className="text-sm text-gray-600">Shipped At</p>
-              <p className="text-gray-900">
-                {transaction.shipped_at 
-                  ? new Date(transaction.shipped_at).toLocaleString() 
-                  : 'N/A'}
-              </p>
-            </div>
             <div>
               <p className="text-sm text-gray-600">Delivery Confirmed At</p>
               <p className="text-gray-900">
@@ -609,20 +458,8 @@ export default function TransactionDetail() {
                   : 'Pending'}
               </p>
             </div>
-            {transaction.tracking_number && (
+            {transaction.auto_release_date && (
               <div>
-                <p className="text-sm text-gray-600">Tracking Number</p>
-                <p className="text-gray-900 font-mono">{transaction.tracking_number}</p>
-              </div>
-            )}
-            {transaction.courier && (
-              <div>
-                <p className="text-sm text-gray-600">Courier</p>
-                <p className="text-gray-900">{transaction.courier}</p>
-              </div>
-            )}
-            {transaction.auto_release_date && transaction.status === 'delivered' && (
-              <div className="col-span-2">
                 <p className="text-sm text-gray-600">Auto-Release Date</p>
                 <p className="text-gray-900">
                   {new Date(transaction.auto_release_date).toLocaleString()}
@@ -632,90 +469,73 @@ export default function TransactionDetail() {
           </div>
           {transaction.buyer_confirmation && (
             <div className="mt-4">
-              <p className="text-sm text-gray-600">Buyer&apos;s Confirmation</p>
+              <p className="text-sm text-gray-600">Buyer's Confirmation</p>
               <p className="text-gray-900">{transaction.buyer_confirmation}</p>
             </div>
           )}
         </div>
       )}
 
-      {/* Evidence Timeline */}
-      {evidence.length > 0 && (
-        <div className="bg-white rounded-lg shadow p-6 mb-6">
-          <h2 className="text-xl font-bold text-gray-900 mb-4">Evidence Timeline</h2>
-          <div className="space-y-4">
-            {evidence.map((item) => (
-              <div 
-                key={item.id} 
-                className={`border-l-4 pl-4 py-2 ${
-                  item.submission_type.startsWith('seller') 
-                    ? 'border-blue-500 bg-blue-50' 
-                    : 'border-green-500 bg-green-50'
-                } rounded-r-lg`}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 mb-6">
+        <h2 className="text-xl font-bold text-gray-900 mb-4">Evidence Timeline</h2>
+        {evidenceTimeline.length === 0 ? (
+          <p className="text-sm text-gray-600">No delivery evidence submitted yet.</p>
+        ) : (
+          <div className="space-y-3">
+            {evidenceTimeline.map((evidence) => (
+              <div
+                key={evidence.id}
+                className={`border rounded-lg p-4 ${
+                  evidence.submission_type === 'seller_ship'
+                    ? 'border-blue-200 bg-blue-50'
+                    : evidence.submission_type === 'buyer_receive'
+                    ? 'border-green-200 bg-green-50'
+                    : 'border-gray-200 bg-gray-50'
+                }`}
               >
-                <div className="flex justify-between items-start">
-                  <div>
-                    <p className="font-medium text-gray-900">
-                      {item.submission_type === 'seller_ship' && 'Seller Shipped Item'}
-                      {item.submission_type === 'buyer_receive' && 'Buyer Confirmed Delivery'}
-                      {item.submission_type === 'seller_additional' && 'Seller Additional Evidence'}
-                      {item.submission_type === 'buyer_additional' && 'Buyer Additional Evidence'}
-                    </p>
-                    <p className="text-sm text-gray-600">
-                      By {item.submitter?.full_name || 'Unknown'} on {new Date(item.submitted_at).toLocaleString()}
-                    </p>
-                  </div>
-                  {item.condition_rating && (
-                    <span className="bg-yellow-100 text-yellow-800 px-2 py-1 rounded text-sm font-medium">
-                      {item.condition_rating}/5 Stars
-                    </span>
-                  )}
+                <div className="flex justify-between items-start mb-1">
+                  <p className="text-sm font-semibold text-gray-900">
+                    {evidence.submission_type === 'seller_ship'
+                      ? 'Seller Shipping Evidence'
+                      : evidence.submission_type === 'buyer_receive'
+                      ? 'Buyer Delivery Confirmation'
+                      : evidence.submission_type}
+                  </p>
+                  <p className="text-xs text-gray-600">
+                    {new Date(evidence.submitted_at).toLocaleString()}
+                  </p>
                 </div>
-                {item.tracking_number && (
-                  <p className="text-sm text-gray-700 mt-1">
-                    <span className="font-medium">Tracking:</span> {item.tracking_number}
-                    {item.courier && ` (${item.courier})`}
+                <p className="text-xs text-gray-700 mb-1">
+                  Submitted by: {evidence.submitter?.full_name || evidence.submitter?.email || 'Unknown user'}
+                </p>
+                {evidence.tracking_number && (
+                  <p className="text-sm text-gray-800">Tracking: {evidence.tracking_number}</p>
+                )}
+                {evidence.courier && (
+                  <p className="text-sm text-gray-800">Courier: {evidence.courier}</p>
+                )}
+                {evidence.condition_rating && (
+                  <p className="text-sm text-gray-800">Condition rating: {evidence.condition_rating}/5</p>
+                )}
+                {typeof evidence.item_matches_description === 'boolean' && (
+                  <p className="text-sm text-gray-800">
+                    Matches description: {evidence.item_matches_description ? 'Yes' : 'No'}
                   </p>
                 )}
-                {item.notes && (
-                  <p className="text-sm text-gray-700 mt-1">
-                    <span className="font-medium">Notes:</span> {item.notes}
-                  </p>
-                )}
-                {item.item_matches_description !== null && (
-                  <p className="text-sm mt-1">
-                    <span className="font-medium">Item matches description:</span>{' '}
-                    <span className={item.item_matches_description ? 'text-green-600' : 'text-red-600'}>
-                      {item.item_matches_description ? 'Yes' : 'No'}
-                    </span>
-                  </p>
-                )}
-                {item.photos && item.photos.length > 0 && (
-                  <div className="mt-2 flex gap-2 flex-wrap">
-                    {item.photos.map((photo, idx) => (
-                      <a 
-                        key={idx} 
-                        href={photo} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="text-blue-600 hover:text-blue-800 text-sm underline"
-                      >
-                        Photo {idx + 1}
-                      </a>
-                    ))}
-                  </div>
+                {evidence.notes && (
+                  <p className="text-sm text-gray-800 mt-1">{evidence.notes}</p>
                 )}
               </div>
             ))}
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Action Buttons */}
-      <div className="bg-white rounded-lg shadow p-6">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
         <h2 className="text-xl font-bold text-gray-900 mb-4">Actions</h2>
         
-        {isBuyer && transaction.status === 'seller_approved' && (
+        {isBuyer && (transaction.status === 'seller_approved' || transaction.status === 'initiated') && (
           <button
             onClick={() => setShowPaymentModal(true)}
             className="w-full bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition font-medium mb-2"
@@ -831,7 +651,7 @@ export default function TransactionDetail() {
         )}
 
         {transaction.status === 'released' && (
-          <p className="text-green-600 text-center font-medium">
+          <p className="text-green-600 text-center font-semibold">
             ✓ Transaction completed successfully
           </p>
         )}
@@ -839,23 +659,23 @@ export default function TransactionDetail() {
 
       {/* Payment Modal */}
       {showPaymentModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-            <h3 className="text-xl font-bold mb-4">Confirm Payment</h3>
-            <p className="text-gray-600 mb-4">
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl p-6 max-w-md w-full">
+            <h3 className="text-xl font-bold text-slate-900 mb-2">Confirm M-Pesa Payment</h3>
+            <p className="text-slate-600 mb-5">
               You will receive an M-Pesa prompt on your phone to confirm payment of KES {transaction.amount.toLocaleString()}.
             </p>
             <div className="flex gap-2">
               <button
                 onClick={initiatePayment}
                 disabled={actionLoading}
-                className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"
+                className="flex-1 bg-blue-600 text-white px-4 py-2.5 rounded-xl hover:bg-blue-700 transition font-semibold"
               >
                 {actionLoading ? 'Processing...' : 'Confirm'}
               </button>
               <button
                 onClick={() => setShowPaymentModal(false)}
-                className="flex-1 bg-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-400 transition"
+                className="flex-1 bg-slate-200 text-slate-700 px-4 py-2.5 rounded-xl hover:bg-slate-300 transition font-semibold"
               >
                 Cancel
               </button>
@@ -866,75 +686,56 @@ export default function TransactionDetail() {
 
       {/* Shipping Modal */}
       {showShippingModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
-            <h3 className="text-xl font-bold mb-4">Mark as Shipped</h3>
-            <p className="text-sm text-gray-600 mb-4">
-              Provide shipping details to help the buyer track their order.
-            </p>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Tracking Number (optional)
-                </label>
-                <input
-                  type="text"
-                  value={trackingNumber}
-                  onChange={(e) => setTrackingNumber(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Enter tracking number"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Courier / Delivery Service (optional)
-                </label>
-                <select
-                  value={courier}
-                  onChange={(e) => setCourier(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  <option value="">Select courier</option>
-                  <option value="G4S Kenya">G4S Kenya</option>
-                  <option value="Wells Fargo">Wells Fargo</option>
-                  <option value="Sendy">Sendy</option>
-                  <option value="Fargo Courier">Fargo Courier</option>
-                  <option value="Posta Kenya">Posta Kenya</option>
-                  <option value="DHL">DHL</option>
-                  <option value="FedEx">FedEx</option>
-                  <option value="Personal Delivery">Personal Delivery</option>
-                  <option value="Other">Other</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Shipping Notes (optional)
-                </label>
-                <textarea
-                  value={shippingNotes}
-                  onChange={(e) => setShippingNotes(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  rows="3"
-                  placeholder="Any additional details about the shipment..."
-                />
-              </div>
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl p-6 max-w-md w-full">
+            <h3 className="text-xl font-bold text-slate-900 mb-4">Submit Shipping Evidence</h3>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Tracking Number *
+              </label>
+              <input
+                type="text"
+                value={trackingNumber}
+                onChange={(e) => setTrackingNumber(e.target.value)}
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Enter tracking number"
+              />
             </div>
-            <div className="flex gap-2 mt-6">
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Courier *
+              </label>
+              <input
+                type="text"
+                value={courier}
+                onChange={(e) => setCourier(e.target.value)}
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="e.g. G4S Kenya"
+              />
+            </div>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Shipping Notes (optional)
+              </label>
+              <textarea
+                value={shippingNotes}
+                onChange={(e) => setShippingNotes(e.target.value)}
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                rows="3"
+                placeholder="Packaging and dispatch details"
+              />
+            </div>
+            <div className="flex gap-2">
               <button
                 onClick={markAsShipped}
-                disabled={actionLoading}
-                className="flex-1 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition"
+                disabled={actionLoading || !trackingNumber.trim() || !courier.trim()}
+                className="flex-1 bg-green-600 text-white px-4 py-2.5 rounded-xl hover:bg-green-700 transition font-semibold"
               >
                 {actionLoading ? 'Processing...' : 'Confirm Shipment'}
               </button>
               <button
-                onClick={() => {
-                  setShowShippingModal(false);
-                  setTrackingNumber('');
-                  setCourier('');
-                  setShippingNotes('');
-                }}
-                className="flex-1 bg-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-400 transition"
+                onClick={() => setShowShippingModal(false)}
+                className="flex-1 bg-slate-200 text-slate-700 px-4 py-2.5 rounded-xl hover:bg-slate-300 transition font-semibold"
               >
                 Cancel
               </button>
@@ -945,85 +746,62 @@ export default function TransactionDetail() {
 
       {/* Delivery Confirmation Modal */}
       {showConfirmModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
-            <h3 className="text-xl font-bold mb-4">Confirm Delivery</h3>
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
-              <p className="text-yellow-800 text-sm">
-                Confirming delivery will release the funds to the seller. This action cannot be undone. Only confirm if you have received the item and are satisfied.
-              </p>
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl p-6 max-w-md w-full">
+            <h3 className="text-xl font-bold text-slate-900 mb-2">Confirm Delivery</h3>
+            <p className="text-slate-600 mb-4">
+              Confirming delivery will release the funds to the seller. This action cannot be undone.
+            </p>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Condition Rating *
+              </label>
+              <select
+                value={conditionRating}
+                onChange={(e) => setConditionRating(Number(e.target.value))}
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value={5}>5 - Excellent</option>
+                <option value={4}>4 - Good</option>
+                <option value={3}>3 - Fair</option>
+                <option value={2}>2 - Poor</option>
+                <option value={1}>1 - Bad</option>
+              </select>
             </div>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Item Condition Rating
-                </label>
-                <div className="flex gap-2">
-                  {[1, 2, 3, 4, 5].map((star) => (
-                    <button
-                      key={star}
-                      type="button"
-                      onClick={() => setConditionRating(star)}
-                      className={`w-10 h-10 rounded-full border-2 font-bold transition ${
-                        star <= conditionRating
-                          ? 'bg-yellow-400 border-yellow-500 text-white'
-                          : 'bg-gray-100 border-gray-300 text-gray-500 hover:bg-gray-200'
-                      }`}
-                    >
-                      {star}
-                    </button>
-                  ))}
-                </div>
-                <p className="text-sm text-gray-500 mt-1">
-                  {conditionRating === 5 && 'Excellent - As described'}
-                  {conditionRating === 4 && 'Good - Minor issues'}
-                  {conditionRating === 3 && 'Average - Some issues'}
-                  {conditionRating === 2 && 'Poor - Major issues'}
-                  {conditionRating === 1 && 'Very Poor - Not as expected'}
-                </p>
-              </div>
-              <div>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={itemMatchesDescription}
-                    onChange={(e) => setItemMatchesDescription(e.target.checked)}
-                    className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                  />
-                  <span className="text-sm font-medium text-gray-700">
-                    Item matches the description provided
-                  </span>
-                </label>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Confirmation Comment (optional)
-                </label>
-                <textarea
-                  value={confirmationComment}
-                  onChange={(e) => setConfirmationComment(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  rows="3"
-                  placeholder="Add any comments about the delivery..."
-                />
-              </div>
+            <div className="mb-4 flex items-center gap-2">
+              <input
+                id="itemMatches"
+                type="checkbox"
+                checked={itemMatchesDescription}
+                onChange={(e) => setItemMatchesDescription(e.target.checked)}
+              />
+              <label htmlFor="itemMatches" className="text-sm text-gray-700">
+                Item matches the agreed description
+              </label>
             </div>
-            <div className="flex gap-2 mt-6">
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Confirmation Comment (optional)
+              </label>
+              <textarea
+                value={confirmationComment}
+                onChange={(e) => setConfirmationComment(e.target.value)}
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                rows="3"
+                placeholder="Add any comments about the delivery"
+              />
+            </div>
+            <div className="flex gap-2">
               <button
                 onClick={confirmDelivery}
                 disabled={actionLoading}
-                className="flex-1 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition"
+                className="flex-1 bg-green-600 text-white px-4 py-2.5 rounded-xl hover:bg-green-700 transition font-semibold"
               >
                 {actionLoading ? 'Processing...' : 'Confirm Delivery'}
               </button>
               <button
-                onClick={() => {
-                  setShowConfirmModal(false);
-                  setConfirmationComment('');
-                  setConditionRating(5);
-                  setItemMatchesDescription(true);
-                }}
-                className="flex-1 bg-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-400 transition"
+                onClick={() => setShowConfirmModal(false)}
+                className="flex-1 bg-slate-200 text-slate-700 px-4 py-2.5 rounded-xl hover:bg-slate-300 transition font-semibold"
               >
                 Cancel
               </button>
@@ -1034,10 +812,10 @@ export default function TransactionDetail() {
 
       {/* Dispute Modal */}
       {showDisputeModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-            <h3 className="text-xl font-bold mb-4">Raise Dispute</h3>
-            <p className="text-gray-600 mb-4">
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl p-6 max-w-md w-full">
+            <h3 className="text-xl font-bold text-slate-900 mb-2">Raise Dispute</h3>
+            <p className="text-slate-600 mb-4">
               Please provide details about the issue. Our admin team will review your dispute.
             </p>
             <div className="mb-4">
@@ -1048,7 +826,7 @@ export default function TransactionDetail() {
                 required
                 value={disputeReason}
                 onChange={(e) => setDisputeReason(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="">Select a reason</option>
                 <option value="item_not_received">Item not received</option>
@@ -1066,7 +844,7 @@ export default function TransactionDetail() {
                 value={disputeDescription}
                 onChange={(e) => setDisputeDescription(e.target.value)}
                 rows="4"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="Describe the issue in detail..."
               />
             </div>
@@ -1074,7 +852,7 @@ export default function TransactionDetail() {
               <button
                 onClick={handleRaiseDispute}
                 disabled={actionLoading || !disputeReason || !disputeDescription}
-                className="flex-1 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition disabled:opacity-50"
+                className="flex-1 bg-red-600 text-white px-4 py-2.5 rounded-xl hover:bg-red-700 transition font-semibold disabled:opacity-50"
               >
                 {actionLoading ? 'Submitting...' : 'Submit Dispute'}
               </button>
@@ -1084,7 +862,7 @@ export default function TransactionDetail() {
                   setDisputeReason('');
                   setDisputeDescription('');
                 }}
-                className="flex-1 bg-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-400 transition"
+                className="flex-1 bg-slate-200 text-slate-700 px-4 py-2.5 rounded-xl hover:bg-slate-300 transition font-semibold"
               >
                 Cancel
               </button>

@@ -65,6 +65,9 @@ CREATE TABLE IF NOT EXISTS transactions (
   
   -- Delivery details
   delivery_proof_url TEXT, -- Seller's shipping proof
+  tracking_number VARCHAR(100),
+  courier VARCHAR(100),
+  shipped_at TIMESTAMP WITH TIME ZONE,
   delivery_confirmed_at TIMESTAMP WITH TIME ZONE,
   buyer_confirmation TEXT, -- Buyer's delivery confirmation comment
   
@@ -143,6 +146,33 @@ CREATE INDEX IF NOT EXISTS idx_seller_invitations_email_status
   ON seller_invitations(email, status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_seller_invitations_inviter
   ON seller_invitations(invited_by_user_id, created_at DESC);
+
+-- ===== DELIVERY EVIDENCE =====
+CREATE TABLE IF NOT EXISTS delivery_evidence (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  transaction_id UUID NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+  submitted_by UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  submission_type VARCHAR(30) NOT NULL CHECK (
+    submission_type IN ('seller_ship', 'buyer_receive', 'seller_additional', 'buyer_additional')
+  ),
+  tracking_number VARCHAR(100),
+  courier VARCHAR(100),
+  estimated_delivery_date DATE,
+  condition_rating INT CHECK (condition_rating >= 1 AND condition_rating <= 5),
+  item_matches_description BOOLEAN,
+  notes TEXT,
+  photos TEXT[],
+  submitted_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_delivery_evidence_transaction
+  ON delivery_evidence(transaction_id, submitted_at DESC);
+CREATE INDEX IF NOT EXISTS idx_delivery_evidence_type
+  ON delivery_evidence(submission_type);
+CREATE INDEX IF NOT EXISTS idx_delivery_evidence_submitter
+  ON delivery_evidence(submitted_by);
 
 -- ===== DISPUTES TABLE =====
 CREATE TABLE IF NOT EXISTS disputes (
@@ -257,6 +287,9 @@ CREATE TRIGGER seller_transaction_requests_updated_at BEFORE UPDATE ON seller_tr
 CREATE TRIGGER seller_invitations_updated_at BEFORE UPDATE ON seller_invitations
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+CREATE TRIGGER delivery_evidence_updated_at BEFORE UPDATE ON delivery_evidence
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
 -- ===== ROW LEVEL SECURITY (RLS) POLICIES =====
 -- Enable RLS on sensitive tables
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
@@ -267,6 +300,7 @@ ALTER TABLE transaction_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ratings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE seller_transaction_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE seller_invitations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE delivery_evidence ENABLE ROW LEVEL SECURITY;
 
 -- Users can view their own profile OR if they are admin (using auth.uid() directly to avoid recursion)
 -- Note: We use a security definer function to check admin status safely
@@ -368,6 +402,28 @@ CREATE POLICY "Users can view their seller invitations" ON seller_invitations
 CREATE POLICY "System can insert seller invitations" ON seller_invitations
   FOR INSERT WITH CHECK (true);
 
+CREATE POLICY "Users can view evidence for their transactions" ON delivery_evidence
+  FOR SELECT USING (
+    EXISTS (
+      SELECT 1 FROM transactions t
+      WHERE t.id = delivery_evidence.transaction_id
+      AND (t.buyer_id = auth.uid()::uuid OR t.seller_id = auth.uid()::uuid)
+    )
+    OR EXISTS (
+      SELECT 1 FROM users u
+      WHERE u.id = auth.uid()::uuid AND u.role = 'admin'
+    )
+  );
+
+CREATE POLICY "Users can submit evidence for their transactions" ON delivery_evidence
+  FOR INSERT WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM transactions t
+      WHERE t.id = delivery_evidence.transaction_id
+      AND (t.buyer_id = auth.uid()::uuid OR t.seller_id = auth.uid()::uuid)
+    )
+  );
+
 -- ===== COMMENTS (Documentation) =====
 COMMENT ON TABLE users IS 'Stores user account information, roles, and KYC status';
 COMMENT ON TABLE transactions IS 'Core escrow transactions between buyers and sellers';
@@ -376,3 +432,4 @@ COMMENT ON TABLE disputes IS 'Dispute/conflict resolution records';
 COMMENT ON TABLE notifications IS 'User notifications for transaction updates';
 COMMENT ON TABLE ratings IS 'User ratings and reviews after completed transactions';
 COMMENT ON TABLE audit_logs IS 'System audit trail for compliance and security';
+COMMENT ON TABLE delivery_evidence IS 'Structured seller and buyer delivery evidence for transaction verification';

@@ -73,7 +73,7 @@ export async function GET(request, { params }) {
       });
     }
 
-    const resultCode = String(mpesaResponse.data.ResultCode);
+    const resultCode = mpesaResponse.data.ResultCode;
     
     if (resultCode === '0') {
       // Payment successful

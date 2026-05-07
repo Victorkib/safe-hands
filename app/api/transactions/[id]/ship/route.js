@@ -8,7 +8,7 @@ const supabase = createClient(
 
 /**
  * POST /api/transactions/[id]/ship
- * Seller marks item as shipped with structured evidence
+ * Seller marks item as shipped
  */
 export async function POST(request, { params }) {
   try {
@@ -18,14 +18,7 @@ export async function POST(request, { params }) {
 
     // Get request body
     const body = await request.json();
-    const { 
-      delivery_proof_url, 
-      tracking_number, 
-      courier,
-      notes,
-      photos,
-      estimated_delivery_date 
-    } = body;
+    const { delivery_proof_url, tracking_number, courier, notes, photos } = body;
 
     // Get transaction
     const { data: transaction, error: transactionError } = await supabase
@@ -57,21 +50,31 @@ export async function POST(request, { params }) {
       );
     }
 
-    // Set auto-release date (3 days from now)
-    const autoReleaseDate = new Date();
-    autoReleaseDate.setDate(autoReleaseDate.getDate() + 3);
-    const shippedAt = new Date().toISOString();
+    if (!tracking_number) {
+      return Response.json(
+        { error: 'tracking_number is required' },
+        { status: 400 }
+      );
+    }
 
-    // Update transaction with shipping details
+    if (!courier) {
+      return Response.json(
+        { error: 'courier is required' },
+        { status: 400 }
+      );
+    }
+
+    const normalizedPhotos = Array.isArray(photos) ? photos : [];
+
+    // Update transaction
     const { error: updateError } = await supabase
       .from('transactions')
       .update({
         delivery_proof_url,
-        tracking_number: tracking_number || null,
-        courier: courier || null,
-        shipped_at: shippedAt,
+        tracking_number,
+        courier,
+        shipped_at: new Date().toISOString(),
         status: 'delivered', // Item shipped, waiting for buyer confirmation
-        auto_release_date: autoReleaseDate.toISOString(),
       })
       .eq('id', id);
 
@@ -83,26 +86,15 @@ export async function POST(request, { params }) {
       );
     }
 
-    // Create structured evidence record
-    const evidenceData = {
+    await supabase.from('delivery_evidence').insert({
       transaction_id: id,
       submitted_by: user.id,
       submission_type: 'seller_ship',
-      tracking_number: tracking_number || null,
-      courier: courier || null,
-      estimated_delivery_date: estimated_delivery_date || null,
+      tracking_number,
+      courier,
       notes: notes || null,
-      photos: photos || [],
-    };
-
-    const { error: evidenceError } = await supabase
-      .from('delivery_evidence')
-      .insert(evidenceData);
-
-    if (evidenceError) {
-      // Log but don't fail - main transaction is already updated
-      console.error('Evidence insert error (non-fatal):', evidenceError);
-    }
+      photos: normalizedPhotos,
+    });
 
     // Log to transaction history
     await supabase.from('transaction_history').insert({
@@ -110,18 +102,25 @@ export async function POST(request, { params }) {
       old_status: 'escrow',
       new_status: 'delivered',
       changed_by: user.id,
-      reason: `Item shipped. Tracking: ${tracking_number || 'N/A'}${courier ? ` via ${courier}` : ''}`,
+      reason: `Item shipped. Tracking: ${tracking_number}`,
     });
 
-    // Notify buyer with shipping details
-    const trackingInfo = tracking_number 
-      ? `Tracking: ${tracking_number}${courier ? ` (${courier})` : ''}`
-      : 'No tracking number provided';
+    // Set auto-release date (3 days from now)
+    const autoReleaseDate = new Date();
+    autoReleaseDate.setDate(autoReleaseDate.getDate() + 3);
     
+    await supabase
+      .from('transactions')
+      .update({
+        auto_release_date: autoReleaseDate.toISOString(),
+      })
+      .eq('id', id);
+
+    // Notify buyer
     await supabase.from('notifications').insert({
       user_id: transaction.buyer_id,
       title: 'Item Shipped',
-      message: `Your item has been shipped. ${trackingInfo}. Please confirm delivery within 3 days or raise a dispute if there are issues.`,
+      message: `Your item has been shipped via ${courier} (Tracking: ${tracking_number}). Please confirm delivery within 3 days.`,
       type: 'item_shipped',
       related_transaction_id: id,
     });
@@ -130,7 +129,6 @@ export async function POST(request, { params }) {
       success: true,
       message: 'Item marked as shipped',
       auto_release_date: autoReleaseDate.toISOString(),
-      shipped_at: shippedAt,
     });
 
   } catch (error) {

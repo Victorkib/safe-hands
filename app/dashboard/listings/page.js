@@ -119,34 +119,36 @@ export default function ListingsManagement() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading listings...</p>
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-center bg-white border border-slate-200 shadow-sm rounded-2xl px-8 py-10">
+          <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-slate-700 font-medium">Loading your listings...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-6xl mx-auto">
-      <div className="mb-6 flex justify-between items-center">
-        <div>
-          <Link href="/dashboard" className="text-blue-600 hover:text-blue-700 mb-4 inline-block">
-            ← Back to Dashboard
+    <div className="max-w-7xl mx-auto space-y-6">
+      <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-cyan-600 via-blue-600 to-indigo-600 text-white p-8 shadow-lg">
+        <div className="flex justify-between items-center gap-4 flex-wrap">
+          <div>
+            <Link href="/dashboard" className="text-cyan-100 hover:text-white mb-4 inline-block">
+              ← Back to Dashboard
+            </Link>
+            <h1 className="text-3xl font-bold tracking-tight mt-1">My Listings</h1>
+            <p className="text-cyan-100 mt-2">Manage inventory, pricing, and listing performance at a glance.</p>
+          </div>
+          <Link
+            href="/dashboard/listings/create"
+            className="bg-white text-blue-700 px-6 py-3 rounded-xl hover:bg-blue-50 transition font-semibold shadow-sm"
+          >
+            + Create Listing
           </Link>
-          <h1 className="text-3xl font-bold text-gray-900 mt-2">My Listings</h1>
-          <p className="text-gray-600 mt-2">Manage your items for sale</p>
         </div>
-        <Link
-          href="/dashboard/listings/create"
-          className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition font-medium"
-        >
-          + Create Listing
-        </Link>
       </div>
 
-      <div className="mb-6 p-4 bg-white rounded-lg shadow">
+      <div className="p-5 bg-white border border-slate-200 rounded-2xl shadow-sm">
         <div className="grid grid-cols-4 gap-4 text-center">
           <div>
             <p className="text-2xl font-bold text-gray-900">{listings.length}</p>
@@ -173,7 +175,7 @@ export default function ListingsManagement() {
         </div>
       </div>
 
-      <div className="mb-6 flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-2">
         {['all', 'active', 'sold', 'inactive'].map((status) => (
           <button
             key={status}
@@ -181,7 +183,7 @@ export default function ListingsManagement() {
             className={`px-4 py-2 rounded-lg transition font-medium capitalize ${
               filter === status
                 ? 'bg-blue-600 text-white'
-                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
             }`}
           >
             {status}
@@ -189,7 +191,7 @@ export default function ListingsManagement() {
         ))}
       </div>
 
-      <div className="bg-white rounded-lg shadow overflow-hidden">
+      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
         {filteredListings.length === 0 ? (
           <div className="p-8 text-center">
             <p className="text-gray-600">No listings found</p>
@@ -203,7 +205,7 @@ export default function ListingsManagement() {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-gray-50 border-b">
+              <thead className="bg-slate-50 border-b border-slate-200">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">
                     Listing
@@ -230,7 +232,7 @@ export default function ListingsManagement() {
               </thead>
               <tbody>
                 {filteredListings.map((listing) => (
-                  <tr key={listing.id} className="border-b hover:bg-gray-50 transition">
+                  <tr key={listing.id} className="border-b border-slate-200 hover:bg-slate-50 transition">
                     <td className="px-6 py-4">
                       <div className="flex items-center">
                         {listing.images && listing.images.length > 0 && (

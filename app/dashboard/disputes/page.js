@@ -74,12 +74,12 @@ export default function DisputesPage() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900">Disputes</h1>
-        <p className="text-gray-600 mt-1">View and manage transaction disputes</p>
+      <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-rose-600 via-orange-600 to-amber-600 text-white p-8 shadow-lg">
+        <h1 className="text-3xl font-bold tracking-tight">Disputes</h1>
+        <p className="text-rose-100 mt-2">Track active cases, review status changes, and keep resolution progress transparent.</p>
       </div>
 
-      <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
         <div className="p-6 border-b border-gray-200">
           <div className="flex flex-wrap gap-3">
             {['all', 'open', 'in_review', 'awaiting_response', 'resolved', 'closed'].map((status) => (
@@ -112,7 +112,7 @@ export default function DisputesPage() {
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="bg-gray-50 border-b border-gray-200">
+                <tr className="bg-slate-50 border-b border-slate-200">
                   <th className="px-6 py-4 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider">
                     Dispute ID
                   </th>

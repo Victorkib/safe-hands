@@ -129,8 +129,8 @@ export default function AdminDisputesPage() {
     if (!showModal || !selectedDispute) return null;
 
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+      <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
           <div className="p-6 border-b border-gray-200 sticky top-0 bg-white">
             <h3 className="text-lg font-bold text-gray-900">Resolve Dispute</h3>
           </div>
@@ -281,9 +281,9 @@ export default function AdminDisputesPage() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900">Manage Disputes</h1>
-        <p className="text-gray-600 mt-1">Review and resolve transaction disputes</p>
+      <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-violet-700 via-indigo-700 to-blue-700 text-white p-8 shadow-lg">
+        <h1 className="text-3xl font-bold tracking-tight">Manage Disputes</h1>
+        <p className="text-indigo-100 mt-2">Review evidence, make fair decisions, and close disputes with complete audit clarity.</p>
       </div>
 
       {error && (
@@ -295,7 +295,7 @@ export default function AdminDisputesPage() {
         </div>
       )}
 
-      <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6 space-y-6">
+      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 space-y-6">
         {/* Status Filter */}
         <div className="flex flex-wrap gap-2">
           {['all', 'open', 'in_review', 'awaiting_response', 'resolved', 'closed'].map((status) => (

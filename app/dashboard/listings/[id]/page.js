@@ -173,10 +173,10 @@ export default function EditListing() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-center bg-white border border-slate-200 shadow-sm rounded-2xl px-8 py-10">
           <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading...</p>
+          <p className="text-slate-700 font-medium">Loading listing editor...</p>
         </div>
       </div>
     );
@@ -196,18 +196,18 @@ export default function EditListing() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto">
-      <div className="mb-6">
-        <Link href="/dashboard/listings" className="text-blue-600 hover:text-blue-700 mb-4 inline-block">
+    <div className="max-w-5xl mx-auto space-y-6">
+      <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-8 shadow-lg">
+        <Link href="/dashboard/listings" className="text-slate-300 hover:text-white mb-4 inline-block">
           ← Back to Listings
         </Link>
-        <h1 className="text-3xl font-bold text-gray-900 mt-2">Edit Listing</h1>
-        <p className="text-gray-600 mt-2">Update your listing details</p>
+        <h1 className="text-3xl font-bold tracking-tight mt-1">Edit Listing</h1>
+        <p className="text-slate-300 mt-2">Update content, pricing, status, and media without leaving your workflow.</p>
       </div>
 
-      <div className="bg-white rounded-lg shadow p-6">
+      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6">
         {error && (
-          <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
+          <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700">
             {error}
           </div>
         )}
@@ -225,7 +225,7 @@ export default function EditListing() {
               maxLength={255}
               value={formData.title}
               onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
 
@@ -241,7 +241,7 @@ export default function EditListing() {
               rows={6}
               value={formData.description}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
 
@@ -258,7 +258,7 @@ export default function EditListing() {
                 step="0.01"
                 value={formData.price}
                 onChange={(e) => setFormData({ ...formData, price: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
 
@@ -271,7 +271,7 @@ export default function EditListing() {
                 required
                 value={formData.category_id}
                 onChange={(e) => setFormData({ ...formData, category_id: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="">Select a category</option>
                 {categories.map((cat) => (
@@ -292,7 +292,7 @@ export default function EditListing() {
                 name="condition"
                 value={formData.condition}
                 onChange={(e) => setFormData({ ...formData, condition: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="new">New</option>
                 <option value="used_like_new">Used - Like New</option>
@@ -309,7 +309,7 @@ export default function EditListing() {
                 name="status"
                 value={formData.status}
                 onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>
@@ -327,7 +327,7 @@ export default function EditListing() {
               name="location"
               value={formData.location}
               onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
 
@@ -361,7 +361,7 @@ export default function EditListing() {
               multiple
               accept="image/jpeg,image/png,image/webp,image/gif"
               onChange={handleImageChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
             <p className="text-sm text-gray-500 mt-1">
               {5 - imagePreviews.length} more images can be added
@@ -372,13 +372,13 @@ export default function EditListing() {
             <button
               type="submit"
               disabled={submitting}
-              className="flex-1 bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 bg-blue-600 text-white px-6 py-3.5 rounded-xl hover:bg-blue-700 transition font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {submitting ? 'Saving...' : 'Save Changes'}
             </button>
             <Link
               href="/dashboard/listings"
-              className="flex-1 bg-gray-300 text-gray-700 px-6 py-3 rounded-lg hover:bg-gray-400 transition font-medium text-center"
+              className="flex-1 bg-slate-200 text-slate-700 px-6 py-3.5 rounded-xl hover:bg-slate-300 transition font-semibold text-center"
             >
               Cancel
             </Link>

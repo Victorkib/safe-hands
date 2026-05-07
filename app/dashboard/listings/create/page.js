@@ -129,45 +129,46 @@ export default function CreateListing() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-center bg-white border border-slate-200 shadow-sm rounded-2xl px-8 py-10">
           <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading...</p>
+          <p className="text-slate-700 font-medium">Preparing listing editor...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-3xl mx-auto">
-      <div className="mb-6">
-        <Link href="/dashboard" className="text-blue-600 hover:text-blue-700 mb-4 inline-block">
+    <div className="max-w-5xl mx-auto space-y-6">
+      <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-indigo-600 via-blue-600 to-cyan-600 text-white p-8 shadow-lg">
+        <Link href="/dashboard" className="text-blue-100 hover:text-white mb-4 inline-block">
           ← Back to Dashboard
         </Link>
-        <h1 className="text-3xl font-bold text-gray-900 mt-2">Create New Listing</h1>
-        <p className="text-gray-600 mt-2">List your item for sale</p>
+        <h1 className="text-3xl font-bold tracking-tight mt-1">Create New Listing</h1>
+        <p className="text-blue-100 mt-2">Showcase your item with clear details and quality visuals to boost buyer trust.</p>
       </div>
 
-      <div className="bg-white rounded-lg shadow p-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 bg-white border border-slate-200 rounded-2xl shadow-sm p-6">
         {error && (
-          <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
+          <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700">
             {error}
           </div>
         )}
 
-        <form onSubmit={handleSubmit}>
+          <form onSubmit={handleSubmit}>
           <div className="mb-4">
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Title *
             </label>
-            <input
+              <input
               type="text"
               name="title"
               required
               minLength={10}
               maxLength={255}
               placeholder="What are you selling? (min 10 characters)"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
             <p className="text-sm text-gray-500 mt-1">Be descriptive and specific</p>
           </div>
@@ -176,14 +177,14 @@ export default function CreateListing() {
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Description *
             </label>
-            <textarea
+              <textarea
               name="description"
               required
               minLength={50}
               maxLength={5000}
               rows={6}
               placeholder="Describe your item in detail (min 50 characters)"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
             <p className="text-sm text-gray-500 mt-1">Include condition, features, and any defects</p>
           </div>
@@ -200,7 +201,7 @@ export default function CreateListing() {
                 min="1"
                 step="0.01"
                 placeholder="5000"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
 
@@ -211,7 +212,7 @@ export default function CreateListing() {
               <select
                 name="category_id"
                 required
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="">Select a category</option>
                 {categories.map((cat) => (
@@ -230,7 +231,7 @@ export default function CreateListing() {
               </label>
               <select
                 name="condition"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="new">New</option>
                 <option value="used_like_new">Used - Like New</option>
@@ -247,7 +248,7 @@ export default function CreateListing() {
                 type="text"
                 name="location"
                 placeholder="Nairobi, Kenya"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
           </div>
@@ -262,7 +263,7 @@ export default function CreateListing() {
               multiple
               accept="image/jpeg,image/png,image/webp,image/gif"
               onChange={handleImageChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
             {imagePreviews.length > 0 && (
               <div className="mt-2 grid grid-cols-5 gap-2">
@@ -282,14 +283,25 @@ export default function CreateListing() {
           <button
             type="submit"
             disabled={submitting}
-            className="w-full bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full bg-blue-600 text-white px-6 py-3.5 rounded-xl hover:bg-blue-700 transition font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {submitting ? 'Creating...' : 'Create Listing'}
           </button>
-        </form>
+          </form>
+        </div>
+        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 h-fit">
+          <h3 className="font-semibold text-slate-900 mb-4">Listing Quality Checklist</h3>
+          <ul className="text-sm text-slate-700 space-y-2">
+            <li>Use at least 3 clear photos.</li>
+            <li>Mention exact condition and defects.</li>
+            <li>Set realistic price range in KES.</li>
+            <li>Add accurate pickup/delivery location.</li>
+            <li>Include accessories and warranty info.</li>
+          </ul>
+        </div>
       </div>
 
-      <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+      <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl">
         <h3 className="font-medium text-blue-900 mb-2">Tips for successful listings:</h3>
         <ul className="text-sm text-blue-800 list-disc list-inside space-y-1">
           <li>Use clear, well-lit photos from multiple angles</li>

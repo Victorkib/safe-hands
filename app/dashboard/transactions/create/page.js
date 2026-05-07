@@ -3,11 +3,10 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
-import { useAuth } from '@/context/AuthContext';
 
 export default function CreateTransaction() {
   const router = useRouter();
-  const { user, loading: authLoading } = useAuth();
+  const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
@@ -19,14 +18,23 @@ export default function CreateTransaction() {
   });
 
   useEffect(() => {
-    if (authLoading) return;
-    if (!user) {
-      router.push('/auth/login');
-      setLoading(false);
-      return;
-    }
-    setLoading(false);
-  }, [authLoading, user, router]);
+    const checkAuth = async () => {
+      try {
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        if (!authUser) {
+          router.push('/auth/login');
+          return;
+        }
+        setUser(authUser);
+      } catch (error) {
+        console.error('Error:', error);
+        setError('Failed to load user data');
+      } finally {
+        setLoading(false);
+      }
+    };
+    checkAuth();
+  }, [router]);
 
   useEffect(() => {
     const prefillData = localStorage.getItem('prefillTransaction');
@@ -72,31 +80,30 @@ export default function CreateTransaction() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (submitting) return;
     setSubmitting(true);
     setError(null);
-    let timeoutId = null;
 
     try {
       console.log('Starting transaction creation with data:', formData);
+      
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        throw new Error('No active session found');
+      }
 
       console.log('Making API call...');
-      const controller = new AbortController();
-      timeoutId = setTimeout(() => controller.abort(), 20000);
       const response = await fetch('/api/transactions', {
         method: 'POST',
         headers: {
+          'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(formData),
-        credentials: 'same-origin',
-        signal: controller.signal,
       });
-      clearTimeout(timeoutId);
-      timeoutId = null;
 
       console.log('API response status:', response.status);
-      const result = await response.json().catch(() => ({}));
+      const result = await response.json();
       console.log('API response data:', result);
 
       if (response.status === 202 && result.invitation_created) {
@@ -108,128 +115,123 @@ export default function CreateTransaction() {
       if (!response.ok) {
         throw new Error(result.error || 'Failed to create transaction');
       }
-      if (!result?.transaction?.id) {
-        throw new Error('Transaction was created but no transaction ID was returned.');
-      }
 
       console.log('Transaction created successfully, redirecting...');
       router.push(`/dashboard/transactions/${result.transaction.id}`);
     } catch (error) {
       console.error('Error creating transaction:', error);
-      if (error.name === 'AbortError') {
-        setError('Request timed out. Please check your network and try again.');
-      } else {
-        setError(error.message || 'An unexpected error occurred');
-      }
+      setError(error.message || 'An unexpected error occurred');
     } finally {
-      if (timeoutId) clearTimeout(timeoutId);
       setSubmitting(false);
     }
   };
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading...</p>
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-center bg-white border border-slate-200 shadow-sm rounded-2xl px-8 py-10">
+          <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-slate-700 font-medium">Preparing transaction workspace...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-2xl mx-auto">
-      <div className="mb-6">
+    <div className="max-w-4xl mx-auto space-y-6">
+      <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-blue-600 via-indigo-600 to-blue-700 text-white p-8 shadow-lg">
         <button
           onClick={() => router.back()}
-          className="text-blue-600 hover:text-blue-700 mb-4 inline-block"
+          className="mb-5 inline-flex items-center gap-2 text-blue-100 hover:text-white transition"
         >
-          ← Back
+          <span>←</span>
+          <span className="text-sm font-medium">Back</span>
         </button>
-        <h1 className="text-3xl font-bold text-gray-900">Create New Transaction</h1>
-        <p className="text-gray-600 mt-2">
-          Start a new escrow transaction with a seller
+        <h1 className="text-3xl font-bold tracking-tight">Create New Transaction</h1>
+        <p className="text-blue-100 mt-2 max-w-2xl">
+          Start a protected escrow trade in under a minute. Seller approval and payment safety checks are built in automatically.
         </p>
       </div>
 
-      <div className="bg-white rounded-lg shadow p-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
         {error && (
-          <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
+          <div className="mb-5 p-4 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
             {error}
           </div>
         )}
 
-        <form onSubmit={handleSubmit}>
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Seller Email *
-            </label>
-            <input
-              type="email"
-              required
-              value={formData.seller_email}
-              onChange={(e) => setFormData({ ...formData, seller_email: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="seller@example.com"
-            />
-            <p className="text-sm text-gray-500 mt-1">
-              Enter the email of the seller you want to transact with
-            </p>
-          </div>
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div>
+              <label className="block text-sm font-semibold text-slate-800 mb-2">
+                Seller Email *
+              </label>
+              <input
+                type="email"
+                required
+                value={formData.seller_email}
+                onChange={(e) => setFormData({ ...formData, seller_email: e.target.value })}
+                className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="seller@example.com"
+              />
+              <p className="text-xs text-slate-500 mt-2">
+                If the seller is new, we will auto-send an invitation to join and continue this deal.
+              </p>
+            </div>
 
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Amount (KES) *
-            </label>
-            <input
-              type="number"
-              required
-              min="1"
-              step="0.01"
-              value={formData.amount}
-              onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="5000"
-            />
-          </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-800 mb-2">
+                Amount (KES) *
+              </label>
+              <input
+                type="number"
+                required
+                min="1"
+                step="0.01"
+                value={formData.amount}
+                onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+                className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="5000"
+              />
+            </div>
 
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Description *
-            </label>
-            <textarea
-              required
-              rows={4}
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="Describe what you're buying (e.g., iPhone 13, 128GB, Black)"
-            />
-            <p className="text-sm text-gray-500 mt-1">
-              Be specific about the item, condition, and any agreements
-            </p>
-          </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-800 mb-2">
+                Item / Service Description *
+              </label>
+              <textarea
+                required
+                rows={5}
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Describe exactly what is being sold, condition, inclusions, and agreed terms..."
+              />
+              <p className="text-xs text-slate-500 mt-2">
+                Clear detail now reduces disputes later.
+              </p>
+            </div>
 
           <button
             type="submit"
             disabled={submitting}
-            className="w-full bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full bg-blue-600 text-white px-6 py-3.5 rounded-xl hover:bg-blue-700 transition font-semibold disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
           >
-            {submitting ? 'Creating...' : 'Create Transaction'}
+              {submitting ? 'Creating Transaction...' : 'Create Secure Transaction'}
           </button>
-        </form>
-      </div>
+          </form>
+        </div>
 
-      <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-        <h3 className="font-medium text-blue-900 mb-2">How it works:</h3>
-        <ol className="text-sm text-blue-800 list-decimal list-inside space-y-1">
-          <li>Create the transaction with seller details</li>
-          <li>Pay via M-Pesa STK Push (funds held in escrow)</li>
-          <li>Seller ships the item</li>
-          <li>You confirm delivery</li>
-          <li>Funds released to seller</li>
-        </ol>
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 h-fit">
+          <h3 className="font-semibold text-slate-900 mb-4">Flow Preview</h3>
+          <ol className="space-y-3 text-sm">
+            <li className="flex gap-3"><span className="w-6 h-6 rounded-full bg-slate-900 text-white text-xs flex items-center justify-center mt-0.5">1</span><span className="text-slate-700">Buyer creates request</span></li>
+            <li className="flex gap-3"><span className="w-6 h-6 rounded-full bg-slate-900 text-white text-xs flex items-center justify-center mt-0.5">2</span><span className="text-slate-700">Seller approves terms</span></li>
+            <li className="flex gap-3"><span className="w-6 h-6 rounded-full bg-slate-900 text-white text-xs flex items-center justify-center mt-0.5">3</span><span className="text-slate-700">M-Pesa payment enters escrow</span></li>
+            <li className="flex gap-3"><span className="w-6 h-6 rounded-full bg-slate-900 text-white text-xs flex items-center justify-center mt-0.5">4</span><span className="text-slate-700">Shipping + delivery evidence recorded</span></li>
+            <li className="flex gap-3"><span className="w-6 h-6 rounded-full bg-slate-900 text-white text-xs flex items-center justify-center mt-0.5">5</span><span className="text-slate-700">Funds released after confirmation</span></li>
+          </ol>
+        </div>
       </div>
     </div>
   );

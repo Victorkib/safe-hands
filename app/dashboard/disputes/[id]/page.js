@@ -177,15 +177,15 @@ export default function DisputeDetail() {
   const isAdmin = userRole === 'admin';
 
   return (
-    <div className="max-w-4xl mx-auto">
-      <div className="mb-6">
-        <Link href="/dashboard/disputes" className="text-blue-600 hover:text-blue-700 mb-4 inline-block">
+    <div className="max-w-5xl mx-auto">
+      <div className="mb-6 rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-6 shadow-lg">
+        <Link href="/dashboard/disputes" className="text-slate-300 hover:text-white mb-4 inline-block">
           ← Back to Disputes
         </Link>
-        <h1 className="text-3xl font-bold text-gray-900 mt-2">Dispute Details</h1>
+        <h1 className="text-3xl font-bold mt-2">Dispute Details</h1>
       </div>
 
-      <div className="bg-white rounded-lg shadow p-6 mb-6">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 mb-6">
         <div className="flex justify-between items-start mb-4">
           <div>
             <p className="text-sm text-gray-600">Dispute ID</p>
@@ -252,7 +252,7 @@ export default function DisputeDetail() {
 
       {/* Actions */}
       {isInvolved && dispute.status === 'open' && (
-        <div className="bg-white rounded-lg shadow p-6 mb-6">
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 mb-6">
           <h2 className="text-xl font-bold text-gray-900 mb-4">Actions</h2>
           {dispute.evidence_urls && dispute.evidence_urls.length < 3 && (
             <button
@@ -266,7 +266,7 @@ export default function DisputeDetail() {
       )}
 
       {isAdmin && dispute.status === 'open' && (
-        <div className="bg-white rounded-lg shadow p-6 mb-6">
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 mb-6">
           <h2 className="text-xl font-bold text-gray-900 mb-4">Admin Actions</h2>
           <button
             onClick={() => setShowResolveModal(true)}
@@ -279,8 +279,8 @@ export default function DisputeDetail() {
 
       {/* Evidence Upload Modal */}
       {showEvidenceModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl p-6 max-w-md w-full">
             <h3 className="text-xl font-bold mb-4">Upload Evidence</h3>
             <p className="text-sm text-gray-600 mb-4">
               Max 3 files, max 1MB each. JPEG, PNG, or WebP only.
@@ -319,8 +319,8 @@ export default function DisputeDetail() {
 
       {/* Resolution Modal */}
       {showResolveModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl p-6 max-w-md w-full">
             <h3 className="text-xl font-bold mb-4">Resolve Dispute</h3>
             <p className="text-gray-600 mb-4">
               Review the evidence and make a fair resolution.

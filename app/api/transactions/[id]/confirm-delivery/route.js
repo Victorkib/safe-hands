@@ -8,7 +8,7 @@ const supabase = createClient(
 
 /**
  * POST /api/transactions/[id]/confirm-delivery
- * Buyer confirms delivery of item with structured evidence
+ * Buyer confirms delivery of item
  */
 export async function POST(request, { params }) {
   try {
@@ -18,12 +18,11 @@ export async function POST(request, { params }) {
 
     // Get request body
     const body = await request.json();
-    const { 
+    const {
       confirmation_comment,
       condition_rating,
       item_matches_description,
-      notes,
-      photos
+      photos,
     } = body;
 
     // Get transaction
@@ -56,16 +55,31 @@ export async function POST(request, { params }) {
       );
     }
 
-    const confirmedAt = new Date().toISOString();
+    const numericRating = Number(condition_rating);
+    if (!Number.isFinite(numericRating) || numericRating < 1 || numericRating > 5) {
+      return Response.json(
+        { error: 'condition_rating must be between 1 and 5' },
+        { status: 400 }
+      );
+    }
+
+    if (typeof item_matches_description !== 'boolean') {
+      return Response.json(
+        { error: 'item_matches_description must be true or false' },
+        { status: 400 }
+      );
+    }
+
+    const normalizedPhotos = Array.isArray(photos) ? photos : [];
 
     // Update transaction
     const { error: updateError } = await supabase
       .from('transactions')
       .update({
         status: 'released',
-        delivery_confirmed_at: confirmedAt,
-        buyer_confirmation: confirmation_comment || notes || null,
-        completed_at: confirmedAt,
+        delivery_confirmed_at: new Date().toISOString(),
+        buyer_confirmation: confirmation_comment,
+        completed_at: new Date().toISOString(),
       })
       .eq('id', id);
 
@@ -77,68 +91,47 @@ export async function POST(request, { params }) {
       );
     }
 
-    // Create structured evidence record for buyer confirmation
-    const evidenceData = {
+    await supabase.from('delivery_evidence').insert({
       transaction_id: id,
       submitted_by: user.id,
       submission_type: 'buyer_receive',
-      condition_rating: condition_rating || null,
-      item_matches_description: item_matches_description !== undefined ? item_matches_description : null,
-      notes: notes || confirmation_comment || null,
-      photos: photos || [],
-    };
-
-    const { error: evidenceError } = await supabase
-      .from('delivery_evidence')
-      .insert(evidenceData);
-
-    if (evidenceError) {
-      // Log but don't fail - main transaction is already updated
-      console.error('Evidence insert error (non-fatal):', evidenceError);
-    }
+      condition_rating: numericRating,
+      item_matches_description,
+      notes: confirmation_comment || null,
+      photos: normalizedPhotos,
+    });
 
     // Log to transaction history
-    const ratingInfo = condition_rating ? ` (Condition: ${condition_rating}/5)` : '';
     await supabase.from('transaction_history').insert({
       transaction_id: id,
       old_status: 'delivered',
       new_status: 'released',
       changed_by: user.id,
-      reason: `Buyer confirmed delivery${ratingInfo}: ${confirmation_comment || notes || 'No comment'}`,
+      reason: `Buyer confirmed delivery: ${confirmation_comment || 'No comment'}`,
     });
 
-    // Update seller's stats using RPC or direct increment
-    await supabase.rpc('increment_user_transactions', { user_id: transaction.seller_id }).catch(() => {
-      // Fallback: direct update if RPC doesn't exist
-      return supabase
-        .from('users')
-        .update({ total_transactions_completed: (transaction.seller?.total_transactions_completed || 0) + 1 })
-        .eq('id', transaction.seller_id);
-    });
+    // Update seller's stats
+    await supabase
+      .from('users')
+      .update({
+        total_transactions_completed: supabase.raw('total_transactions_completed + 1'),
+      })
+      .eq('id', transaction.seller_id);
 
     // Update buyer's stats
-    await supabase.rpc('increment_user_transactions', { user_id: transaction.buyer_id }).catch(() => {
-      return supabase
-        .from('users')
-        .update({ total_transactions_completed: (transaction.buyer?.total_transactions_completed || 0) + 1 })
-        .eq('id', transaction.buyer_id);
-    });
+    await supabase
+      .from('users')
+      .update({
+        total_transactions_completed: supabase.raw('total_transactions_completed + 1'),
+      })
+      .eq('id', transaction.buyer_id);
 
     // Notify seller - funds released
     await supabase.from('notifications').insert({
       user_id: transaction.seller_id,
       title: 'Funds Released',
-      message: `Buyer confirmed delivery${ratingInfo}. Your funds of KES ${transaction.amount.toLocaleString()} have been released.`,
+      message: `Buyer confirmed delivery. Your funds of KES ${transaction.amount.toLocaleString()} have been released.`,
       type: 'funds_released',
-      related_transaction_id: id,
-    });
-
-    // Notify buyer - confirmation recorded
-    await supabase.from('notifications').insert({
-      user_id: transaction.buyer_id,
-      title: 'Delivery Confirmed',
-      message: `You have confirmed delivery for transaction KES ${transaction.amount.toLocaleString()}. The transaction is now complete.`,
-      type: 'delivery_confirmed',
       related_transaction_id: id,
     });
 
@@ -148,7 +141,6 @@ export async function POST(request, { params }) {
     return Response.json({
       success: true,
       message: 'Delivery confirmed. Funds released to seller.',
-      confirmed_at: confirmedAt,
     });
 
   } catch (error) {
