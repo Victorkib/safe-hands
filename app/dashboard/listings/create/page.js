@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
@@ -13,7 +13,10 @@ export default function CreateListing() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [categories, setCategories] = useState([]);
-  const [imagePreviews, setImagePreviews] = useState([]);
+  const [images, setImages] = useState([]);
+  const fileInputRef = useRef(null);
+  const replacementInputRef = useRef(null);
+  const [replacementIndex, setReplacementIndex] = useState(null);
   
   const [formData, setFormData] = useState({
     title: '',
@@ -49,26 +52,106 @@ export default function CreateListing() {
     }
   };
 
+  const clearFileInputs = () => {
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (replacementInputRef.current) replacementInputRef.current.value = '';
+  };
+
+  const validateImage = (file) => {
+    if (!file.type.startsWith('image/')) {
+      return 'Please upload valid image files only';
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      return 'Image size must be less than 5MB';
+    }
+    return null;
+  };
+
+  const normalizeFiles = (fileList) => {
+    return fileList.map((file) => ({
+      file,
+      preview: URL.createObjectURL(file),
+      hasError: false,
+    }));
+  };
+
   const handleImageChange = (e) => {
-    const files = Array.from(e.target.files);
-    if (files.length > 5) {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    setError(null);
+
+    if (images.length + files.length > 5) {
       setError('Maximum 5 images allowed');
+      clearFileInputs();
       return;
     }
 
-    const previews = [];
-    files.forEach(file => {
-      if (file.size > 5 * 1024 * 1024) {
-        setError('Image size must be less than 5MB');
+    for (const file of files) {
+      const validationError = validateImage(file);
+      if (validationError) {
+        setError(validationError);
+        clearFileInputs();
         return;
       }
-      const reader = new FileReader();
-      reader.onload = (e) => previews.push(e.target.result);
-      reader.readAsDataURL(file);
-    });
+    }
 
-    setImagePreviews(previews);
+    setImages((prev) => [...prev, ...normalizeFiles(files)]);
+    clearFileInputs();
   };
+
+  const markImageError = (index) => {
+    setImages((prev) =>
+      prev.map((img, idx) => (idx === index ? { ...img, hasError: true } : img))
+    );
+  };
+
+  const removeImage = (index) => {
+    setImages((prev) => {
+      const item = prev[index];
+      if (item?.preview) URL.revokeObjectURL(item.preview);
+      return prev.filter((_, idx) => idx !== index);
+    });
+  };
+
+  const openReplacementPicker = (index) => {
+    setReplacementIndex(index);
+    if (replacementInputRef.current) replacementInputRef.current.click();
+  };
+
+  const handleReplaceImage = (e) => {
+    const replacementFile = e.target.files?.[0];
+    if (!replacementFile || replacementIndex === null) return;
+
+    const validationError = validateImage(replacementFile);
+    if (validationError) {
+      setError(validationError);
+      clearFileInputs();
+      return;
+    }
+
+    setError(null);
+    setImages((prev) =>
+      prev.map((img, idx) => {
+        if (idx !== replacementIndex) return img;
+        if (img.preview) URL.revokeObjectURL(img.preview);
+        return {
+          file: replacementFile,
+          preview: URL.createObjectURL(replacementFile),
+          hasError: false,
+        };
+      })
+    );
+    setReplacementIndex(null);
+    clearFileInputs();
+  };
+
+  useEffect(() => {
+    return () => {
+      images.forEach((img) => {
+        if (img.preview) URL.revokeObjectURL(img.preview);
+      });
+    };
+  }, [images]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -87,10 +170,9 @@ export default function CreateListing() {
       formData.append('location', form.location.value);
       formData.append('condition', form.condition.value);
 
-      const imageInput = form.images;
-      if (imageInput.files.length > 0) {
-        Array.from(imageInput.files).forEach(file => {
-          formData.append('images', file);
+      if (images.length > 0) {
+        images.forEach((image) => {
+          formData.append('images', image.file);
         });
       }
 
@@ -263,17 +345,44 @@ export default function CreateListing() {
               multiple
               accept="image/jpeg,image/png,image/webp,image/gif"
               onChange={handleImageChange}
+              ref={fileInputRef}
               className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
-            {imagePreviews.length > 0 && (
+            <input
+              ref={replacementInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              onChange={handleReplaceImage}
+              className="hidden"
+            />
+            {images.length > 0 && (
               <div className="mt-2 grid grid-cols-5 gap-2">
-                {imagePreviews.map((preview, index) => (
-                  <img
-                    key={index}
-                    src={preview}
-                    alt={`Preview ${index + 1}`}
-                    className="w-full h-20 object-cover rounded-lg border"
-                  />
+                {images.map((image, index) => (
+                  <div key={`${image.preview}-${index}`} className="relative">
+                    <img
+                      src={image.preview}
+                      alt={`Preview ${index + 1}`}
+                      className={`w-full h-20 object-cover rounded-lg border ${image.hasError ? 'opacity-40' : ''}`}
+                      onError={() => markImageError(index)}
+                    />
+                    {image.hasError && (
+                      <button
+                        type="button"
+                        onClick={() => openReplacementPicker(index)}
+                        className="absolute inset-0 bg-black/70 text-white text-xs rounded-lg px-2"
+                      >
+                        Replace image
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => removeImage(index)}
+                      className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-600 text-white text-xs"
+                      aria-label={`Remove image ${index + 1}`}
+                    >
+                      ×
+                    </button>
+                  </div>
                 ))}
               </div>
             )}
