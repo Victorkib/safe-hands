@@ -78,7 +78,7 @@ export default function Sidebar() {
         },
         {
           name: 'Orders',
-          href: '/dashboard/transactions',
+          href: '/dashboard/seller',
           icon: '📋',
         },
         {
@@ -98,7 +98,7 @@ export default function Sidebar() {
         ...baseItems,
         {
           name: 'My Purchases',
-          href: '/dashboard/transactions',
+          href: '/dashboard/buyer',
           icon: '🛍️',
         },
         {

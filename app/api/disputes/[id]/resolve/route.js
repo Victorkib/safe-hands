@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { getAuthenticatedUser, unauthorizedResponse } from '@/lib/apiAuth';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -13,26 +14,8 @@ export async function POST(request, { params }) {
   try {
     const { id } = await params;
 
-    // Get authorization header
-    const authHeader = request.headers.get('authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return Response.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
-    const token = authHeader.substring(7);
-
-    // Verify token and get user
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    
-    if (authError || !user) {
-      return Response.json(
-        { error: 'Invalid token' },
-        { status: 401 }
-      );
-    }
+    const { user } = await getAuthenticatedUser(request);
+    if (!user) return unauthorizedResponse();
 
     // Check if user is admin
     const { data: userData, error: userError } = await supabase

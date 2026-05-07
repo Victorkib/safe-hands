@@ -27,6 +27,7 @@ export default function AdminUsersPage() {
     
     if (!profile || profile.role !== 'admin') {
       router.push('/dashboard');
+      setLoading(false);
       return;
     }
     

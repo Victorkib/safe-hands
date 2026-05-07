@@ -8,7 +8,7 @@ import { useAuth } from '@/context/AuthContext';
 
 export default function SellerDashboard() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [transactions, setTransactions] = useState([]);
   const [pendingApprovals, setPendingApprovals] = useState([]);
   const [listings, setListings] = useState([]);
@@ -26,6 +26,8 @@ export default function SellerDashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (authLoading) return;
+
     const checkAuth = async () => {
       try {
         if (!user) {
@@ -77,7 +79,7 @@ export default function SellerDashboard() {
     };
 
     checkAuth();
-  }, [user, router]);
+  }, [user, authLoading, router]);
 
   const filteredTransactions =
     filter === 'all' ? transactions : transactions.filter((tx) => tx.status === filter);

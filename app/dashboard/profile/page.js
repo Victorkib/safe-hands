@@ -3,9 +3,11 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { validateField, validatePhone, normalizePhone } from '@/lib/validation';
+import { useAuth } from '@/context/AuthContext';
 
 export default function ProfilePage() {
   const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
@@ -21,6 +23,21 @@ export default function ProfilePage() {
     profile_picture_url: '',
   });
 
+  const withTimeout = async (promise, ms, fallbackMessage) => {
+    let timeoutId;
+    const timeoutPromise = new Promise((_, reject) => {
+      timeoutId = setTimeout(
+        () => reject(new Error(fallbackMessage || 'Operation timed out')),
+        ms
+      );
+    });
+    try {
+      return await Promise.race([promise, timeoutPromise]);
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  };
+
   // Fetch profile using our unified API
   const fetchProfile = async () => {
     try {
@@ -28,7 +45,11 @@ export default function ProfilePage() {
       const { supabase } = await import('@/lib/supabaseClient');
       const {
         data: { session },
-      } = await supabase.auth.getSession();
+      } = await withTimeout(
+        supabase.auth.getSession(),
+        10000,
+        'Session check timed out'
+      );
 
       if (!session?.access_token) {
         router.push('/auth/login');
@@ -37,11 +58,15 @@ export default function ProfilePage() {
       }
 
       // Fetch profile with Authorization header
-      const response = await fetch('/api/user/profile', {
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-        },
-      });
+      const response = await withTimeout(
+        fetch('/api/user/profile', {
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        }),
+        12000,
+        'Profile API timed out'
+      );
 
       if (response.status === 401) {
         router.push('/auth/login');
@@ -67,8 +92,14 @@ export default function ProfilePage() {
   };
 
   useEffect(() => {
+    if (authLoading) return;
+    if (!user) {
+      router.push('/auth/login');
+      setLoading(false);
+      return;
+    }
     fetchProfile();
-  }, []);
+  }, [authLoading, user, router]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;

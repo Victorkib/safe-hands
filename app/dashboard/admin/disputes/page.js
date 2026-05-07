@@ -34,6 +34,7 @@ export default function AdminDisputesPage() {
     
     if (!profile || profile.role !== 'admin') {
       router.push('/dashboard');
+      setLoading(false);
       return;
     }
     
@@ -93,27 +94,39 @@ export default function AdminDisputesPage() {
 
     setActionLoading(true);
     try {
-      const { error: err } = await supabase
-        .from('disputes')
-        .update({
-          status: 'resolved',
-          decision,
+      const { data: { session } } = await supabase.auth.getSession();
+
+      const decisionToResolutionMap = {
+        buyer_wins: 'refund_buyer',
+        seller_wins: 'release_to_seller',
+        split: 'partial_refund',
+      };
+
+      const resolution = decisionToResolutionMap[decision];
+
+      const response = await fetch(`/api/admin/disputes/${selectedDispute.id}/resolve`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session?.access_token || ''}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          resolution,
           admin_notes: notes,
-          resolved_at: new Date().toISOString(),
-        })
-        .eq('id', selectedDispute.id);
+        }),
+      });
 
-      if (err) throw err;
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Failed to resolve dispute');
+      }
 
-      setDisputes(disputes.map(d =>
-        d.id === selectedDispute.id
-          ? { ...d, status: 'resolved', decision, admin_notes: notes }
-          : d
-      ));
+      // Refresh disputes list to reflect updated status and resolution
+      await fetchDisputes();
 
       setActionMessage({
         type: 'success',
-        text: 'Dispute resolved successfully'
+        text: 'Dispute resolved successfully',
       });
 
       setTimeout(closeModal, 1500);

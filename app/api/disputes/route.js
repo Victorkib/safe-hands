@@ -1,6 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
+import { getAuthenticatedUser, unauthorizedResponse } from '@/lib/apiAuth';
 
 const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
+
+const supabaseStorage = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
@@ -11,30 +17,100 @@ const supabase = createClient(
  */
 export async function POST(request) {
   try {
-    // Get authorization header
-    const authHeader = request.headers.get('authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return Response.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
+    const { user } = await getAuthenticatedUser(request);
+    if (!user) return unauthorizedResponse();
 
-    const token = authHeader.substring(7);
+    // Parse request body (JSON or multipart/form-data for evidence uploads)
+    const contentType = request.headers.get('content-type') || '';
+    const uploadedEvidenceUrls = [];
 
-    // Verify token and get user
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    
-    if (authError || !user) {
-      return Response.json(
-        { error: 'Invalid token' },
-        { status: 401 }
-      );
-    }
+    let transaction_id;
+    let reason;
+    let description;
+    let amount_impact = null;
+    let timeline_notes = null;
+    let check_not_received = false;
+    let check_condition_mismatch = false;
+    let check_timeline_discrepancy = false;
 
-    // Parse request body
-    const body = await request.json();
-    const { transaction_id, reason, description } = body;
+    const parseAndUpload = async () => {
+      if (contentType.includes('multipart/form-data')) {
+        const formData = await request.formData();
+        transaction_id = formData.get('transaction_id');
+        reason = formData.get('reason');
+        description = formData.get('description');
+
+        amount_impact = formData.get('amount_impact');
+        timeline_notes = formData.get('timeline_notes');
+
+        check_not_received = formData.get('check_not_received') === 'true';
+        check_condition_mismatch = formData.get('check_condition_mismatch') === 'true';
+        check_timeline_discrepancy = formData.get('check_timeline_discrepancy') === 'true';
+
+        const files = formData.getAll('files');
+        if (files && files.length > 0) {
+          if (files.length > 3) {
+            return Response.json(
+              { error: 'Maximum 3 evidence files allowed' },
+              { status: 400 }
+            );
+          }
+
+          for (const file of files) {
+            const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+            if (!allowedTypes.includes(file.type)) {
+              return Response.json(
+                { error: `Invalid file type: ${file.type}. Only JPEG, PNG, and WebP are allowed.` },
+                { status: 400 }
+              );
+            }
+
+            const maxSize = 1 * 1024 * 1024; // 1MB
+            if (file.size > maxSize) {
+              return Response.json(
+                { error: `File ${file.name} exceeds 1MB limit` },
+                { status: 400 }
+              );
+            }
+
+            const fileExt = file.name.split('.').pop();
+            const safeExt = fileExt ? fileExt.toLowerCase() : 'img';
+            const fileName = `${user.id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${safeExt}`;
+
+            const { error: uploadError } = await supabaseStorage.storage
+              .from('dispute-evidence')
+              .upload(fileName, file);
+
+            if (uploadError) {
+              console.error('Dispute evidence upload error:', uploadError);
+              return Response.json(
+                { error: `Failed to upload evidence file: ${file.name}` },
+                { status: 500 }
+              );
+            }
+
+            const { data: { publicUrl } } = supabaseStorage.storage
+              .from('dispute-evidence')
+              .getPublicUrl(fileName);
+
+            uploadedEvidenceUrls.push(publicUrl);
+          }
+        }
+        return null;
+      }
+
+      const body = await request.json();
+      ({ transaction_id, reason, description } = body || {});
+      amount_impact = body?.amount_impact ?? null;
+      timeline_notes = body?.timeline_notes ?? null;
+      check_not_received = body?.check_not_received ?? false;
+      check_condition_mismatch = body?.check_condition_mismatch ?? false;
+      check_timeline_discrepancy = body?.check_timeline_discrepancy ?? false;
+      return null;
+    };
+
+    const parseResult = await parseAndUpload();
+    if (parseResult) return parseResult;
 
     // Validate input
     if (!transaction_id || !reason || !description) {
@@ -44,8 +120,8 @@ export async function POST(request) {
       );
     }
 
-    // Validate reason
-    const validReasons = ['item_not_received', 'item_not_as_described', 'other'];
+    // Validate reason (include payment_issue used in UI)
+    const validReasons = ['item_not_received', 'item_not_as_described', 'payment_issue', 'other'];
     if (!validReasons.includes(reason)) {
       return Response.json(
         { error: `Invalid reason. Must be one of: ${validReasons.join(', ')}` },
@@ -102,6 +178,7 @@ export async function POST(request) {
         raised_against,
         reason,
         description,
+        evidence_urls: uploadedEvidenceUrls,
         status: 'open',
       })
       .select()
@@ -114,6 +191,26 @@ export async function POST(request) {
         { status: 500 }
       );
     }
+
+    const disputeEvidenceNotes = [
+      description,
+      amount_impact ? `Amount impact: ${amount_impact}` : null,
+      check_not_received ? 'Checklist: Not received' : null,
+      check_condition_mismatch ? 'Checklist: Condition mismatch / not as described' : null,
+      check_timeline_discrepancy ? 'Checklist: Timeline discrepancy' : null,
+      timeline_notes ? `Timeline notes: ${timeline_notes}` : null,
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+
+    // Seed structured evidence record for the initial dispute narrative
+    await supabase.from('delivery_evidence').insert({
+      transaction_id,
+      submitted_by: user.id,
+      submission_type: transaction.buyer_id === user.id ? 'buyer_additional' : 'seller_additional',
+      notes: disputeEvidenceNotes,
+      photos: uploadedEvidenceUrls,
+    });
 
     // Update transaction to mark as disputed
     await supabase
@@ -181,23 +278,8 @@ export async function POST(request) {
  */
 export async function GET(request) {
   try {
-    const authHeader = request.headers.get('authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return Response.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
-    const token = authHeader.substring(7);
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    
-    if (authError || !user) {
-      return Response.json(
-        { error: 'Invalid token' },
-        { status: 401 }
-      );
-    }
+    const { user } = await getAuthenticatedUser(request);
+    if (!user) return unauthorizedResponse();
 
     // Get query parameters
     const { searchParams } = new URL(request.url);

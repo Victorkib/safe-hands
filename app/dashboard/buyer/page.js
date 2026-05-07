@@ -2,13 +2,15 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/context/AuthContext';
 import { Spinner } from '@/components/ui/spinner';
 import { Skeleton } from '@/components/ui/skeleton';
 
 export default function BuyerDashboard() {
-  const { user } = useAuth();
+  const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
   const [transactions, setTransactions] = useState([]);
   const [stats, setStats] = useState({
     total: 0,
@@ -21,10 +23,15 @@ export default function BuyerDashboard() {
   const [loadingStage, setLoadingStage] = useState('initial');
 
   useEffect(() => {
+    if (authLoading) return;
+
     const fetchTransactions = async () => {
       try {
         setLoadingStage('auth');
-        if (!user) return;
+        if (!user) {
+          router.push('/auth/login');
+          return;
+        }
         setLoadingStage('transactions');
 
         const { data } = await supabase
@@ -51,7 +58,7 @@ export default function BuyerDashboard() {
     };
 
     fetchTransactions();
-  }, [user]);
+  }, [user, authLoading, router]);
 
   const calculateStats = (transactionData) => {
     const newStats = {

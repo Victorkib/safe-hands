@@ -10,9 +10,13 @@ export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [authState, setAuthState] = useState('initializing');
 
   useEffect(() => {
     let isMounted = true;
+    let recoveryInFlight = false;
+    let lastRecoveryAt = 0;
+
     const withTimeout = async (promise, ms, fallbackMessage) => {
       let timeoutId;
       const timeoutPromise = new Promise((_, reject) => {
@@ -28,8 +32,51 @@ export function AuthProvider({ children }) {
       }
     };
 
+    const fetchProfileForUser = async (authUser) => {
+      if (!authUser?.id) return null;
+      const { data: profileData, error: profileError } = await withTimeout(
+        supabase
+          .from('users')
+          .select('*')
+          .eq('id', authUser.id)
+          .single(),
+        8000,
+        'Profile fetch timed out'
+      );
+      if (profileError) {
+        console.warn('[v0] Profile fetch error:', profileError.message);
+        return null;
+      }
+      return profileData || null;
+    };
+
+    const applyUserState = async (authUser) => {
+      if (!isMounted) return;
+
+      if (!authUser) {
+        setUser(null);
+        setProfile(null);
+        setAuthState('unauthenticated');
+        setError(null);
+        setLoading(false);
+        return;
+      }
+
+      setUser(authUser);
+      const profileData = await fetchProfileForUser(authUser);
+      if (!isMounted) return;
+
+      setProfile(profileData);
+      setAuthState('authenticated');
+      setError(null);
+      setLoading(false);
+    };
+
     const initializeAuth = async () => {
       try {
+        setAuthState('initializing');
+        setLoading(true);
+
         // Get current user
         const {
           data: { user: authUser },
@@ -43,50 +90,54 @@ export function AuthProvider({ children }) {
         if (userError) {
           console.error('[v0] Auth error:', userError);
           setError(userError);
-          if (isMounted) setLoading(false);
+          if (isMounted) {
+            setAuthState('error');
+            setLoading(false);
+          }
           return;
         }
 
-        if (authUser && isMounted) {
-          setUser(authUser);
-
-          // Guard against undefined authUser.id which would trigger
-          // a REST call like id=eq.undefined and cause 400 (invalid uuid)
-          if (!authUser.id) {
-            console.warn(
-              '[v0] Auth user present but missing id; skipping profile fetch',
-            );
-            if (isMounted) setLoading(false);
-            return;
-          }
-
-          // Fetch user profile relying on RLS (avoids id=eq.undefined issues)
-          // RLS limits non-admins to only their own row, admins can see all.
-          // maybeSingle() prevents 400 on empty and returns null instead.
-          const { data: profileData, error: profileError } = await withTimeout(
-            supabase
-              .from('users')
-              .select('*')
-              .eq('id', authUser.id)
-              .single(),
-            8000,
-            'Profile fetch timed out'
-          );
-
-          if (profileError) {
-            console.error('[v0] Profile fetch error:', profileError);
-          } else if (isMounted) {
-            setProfile(profileData);
-          }
-        }
-
-        if (isMounted) setLoading(false);
+        await applyUserState(authUser || null);
       } catch (err) {
         console.error('[v0] Initialize auth error:', err);
         if (isMounted) {
           setError(err);
+          setAuthState('error');
           setLoading(false);
         }
+      }
+    };
+
+    const refreshAuth = async (reason = 'manual') => {
+      if (!isMounted) return;
+      const now = Date.now();
+      if (recoveryInFlight || now - lastRecoveryAt < 30000) return;
+
+      recoveryInFlight = true;
+      lastRecoveryAt = now;
+
+      try {
+        setAuthState('recovering');
+
+        const {
+          data: { session },
+        } = await withTimeout(
+          supabase.auth.getSession(),
+          8000,
+          `Session refresh timed out (${reason})`
+        );
+
+        const authUser = session?.user || null;
+        await applyUserState(authUser);
+      } catch (err) {
+        console.error('[v0] Auth recovery failed:', err);
+        if (isMounted) {
+          setError(err);
+          setAuthState('error');
+          setLoading(false);
+        }
+      } finally {
+        recoveryInFlight = false;
       }
     };
 
@@ -97,50 +148,40 @@ export function AuthProvider({ children }) {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!isMounted) return;
+      setAuthState('recovering');
 
       // Supabase onAuthStateChange provides a session, not a user
       const authUser = session?.user ?? null;
 
-      if (authUser?.id) {
-        setUser(authUser);
-
-        // Fetch profile when auth state changes
-        try {
-          const { data: profileData, error: profileErr } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', authUser.id)
-            .single();
-
-          if (profileErr) {
-            console.warn(
-              '[v0] Profile fetch on auth change failed:',
-              profileErr.message,
-            );
-          } else if (profileData) {
-            setProfile(profileData);
-          }
-        } catch (e) {
-          console.warn(
-            '[v0] Profile fetch on auth change threw:',
-            e?.message || e,
-          );
-        }
-      } else {
-        setUser(null);
-        setProfile(null);
+      await applyUserState(authUser);
+      if (process.env.NODE_ENV !== 'production') {
+        console.info('[v0] Auth event:', event);
       }
-      setLoading(false);
     });
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refreshAuth('visibility');
+      }
+    };
+
+    const handleWindowFocus = () => {
+      refreshAuth('focus');
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleWindowFocus);
 
     return () => {
       isMounted = false;
       subscription?.unsubscribe();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleWindowFocus);
     };
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, error }}>
+    <AuthContext.Provider value={{ user, profile, loading, error, authState }}>
       {children}
     </AuthContext.Provider>
   );

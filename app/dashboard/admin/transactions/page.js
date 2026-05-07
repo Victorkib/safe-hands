@@ -36,6 +36,7 @@ export default function AdminTransactionsPage() {
     
     if (!profile || profile.role !== 'admin') {
       router.push('/dashboard');
+      setLoading(false);
       return;
     }
     

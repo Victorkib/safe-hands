@@ -1,67 +1,161 @@
-import { getServerSupabase } from '@/lib/getServerSupabase';
+import { createClient } from '@supabase/supabase-js';
+import { getAuthenticatedUser, unauthorizedResponse } from '@/lib/apiAuth';
 
-export async function PATCH(request, { params }) {
-  const supabase = await getServerSupabase(request);
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
 
+/**
+ * POST /api/admin/disputes/[id]/resolve
+ * Admin resolves a dispute using canonical `resolution`.
+ *
+ * Backwards compatibility:
+ * - If `decision` is provided, it will be mapped to `resolution`.
+ */
+export async function POST(request, { params }) {
   try {
-    // Verify admin
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      return Response.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const { id } = await params;
 
-    const { data: profile } = await supabase
+    const { user } = await getAuthenticatedUser(request);
+    if (!user) return unauthorizedResponse();
+
+    // Check if user is admin
+    const { data: userData, error: userError } = await supabase
       .from('users')
       .select('role')
       .eq('id', user.id)
       .single();
 
-    if (profile?.role !== 'admin') {
-      return Response.json({ error: 'Forbidden' }, { status: 403 });
+    if (userError || !userData || userData.role !== 'admin') {
+      return Response.json(
+        { error: 'Only admins can resolve disputes' },
+        { status: 403 }
+      );
     }
 
-    const { id } = await params;
-    const { decision, admin_notes } = await request.json();
+    const body = await request.json();
+    const { resolution: resolutionFromBody, decision, admin_notes } = body || {};
 
-    if (!decision) {
-      return Response.json({ error: 'Decision is required' }, { status: 400 });
+    // Map legacy decision -> resolution
+    const mappedResolution =
+      resolutionFromBody ||
+      (decision === 'buyer_wins' ? 'refund_buyer'
+        : decision === 'seller_wins' ? 'release_to_seller'
+        : decision === 'split' ? 'partial_refund'
+        : null);
+
+    const validResolutions = ['refund_buyer', 'release_to_seller', 'partial_refund', 'cancelled'];
+    const resolution = mappedResolution;
+
+    if (!resolution || !validResolutions.includes(resolution)) {
+      return Response.json(
+        { error: `Invalid resolution. Must be one of: ${validResolutions.join(', ')}` },
+        { status: 400 }
+      );
     }
 
-    // Update dispute
-    const { error } = await supabase
+    const { data: dispute, error: disputeError } = await supabase
+      .from('disputes')
+      .select(`
+        *,
+        transaction:transactions (*)
+      `)
+      .eq('id', id)
+      .single();
+
+    if (disputeError || !dispute) {
+      return Response.json(
+        { error: 'Dispute not found' },
+        { status: 404 }
+      );
+    }
+
+    if (dispute.status === 'resolved' || dispute.status === 'closed') {
+      return Response.json(
+        { error: 'Dispute has already been resolved' },
+        { status: 400 }
+      );
+    }
+
+    const { error: updateError } = await supabase
       .from('disputes')
       .update({
         status: 'resolved',
-        decision,
+        resolution,
         admin_notes,
+        resolved_by: user.id,
         resolved_at: new Date().toISOString(),
       })
       .eq('id', id);
 
-    if (error) throw error;
-
-    // If buyer wins or split, handle refund logic here
-    if (decision === 'buyer_wins' || decision === 'split') {
-      const { data: dispute } = await supabase
-        .from('disputes')
-        .select('transaction_id')
-        .eq('id', id)
-        .single();
-
-      if (dispute) {
-        // Update transaction status to cancelled or mark for refund
-        await supabase
-          .from('transactions')
-          .update({ status: 'cancelled' })
-          .eq('id', dispute.transaction_id);
-      }
+    if (updateError) {
+      console.error('Dispute update error:', updateError);
+      return Response.json(
+        { error: 'Failed to resolve dispute' },
+        { status: 500 }
+      );
     }
 
-    return Response.json({ success: true, message: 'Dispute resolved successfully' });
+    const transaction = dispute.transaction;
+    let transactionStatus = 'disputed';
+
+    if (resolution === 'refund_buyer') {
+      transactionStatus = 'refunded';
+    } else if (resolution === 'release_to_seller') {
+      transactionStatus = 'released';
+    } else if (resolution === 'cancelled') {
+      transactionStatus = 'cancelled';
+    } else if (resolution === 'partial_refund') {
+      // For now we treat partial refund as released (TODO: partial refund implementation)
+      transactionStatus = 'released';
+    }
+
+    await supabase
+      .from('transactions')
+      .update({
+        status: transactionStatus,
+        is_disputed: false,
+        completed_at: transactionStatus === 'released' || transactionStatus === 'refunded'
+          ? new Date().toISOString()
+          : null,
+      })
+      .eq('id', transaction.id);
+
+    await supabase.from('transaction_history').insert({
+      transaction_id: transaction.id,
+      old_status: transaction.status,
+      new_status: transactionStatus,
+      changed_by: user.id,
+      reason: `Dispute resolved: ${resolution}. ${admin_notes || ''}`,
+    });
+
+    await supabase.from('notifications').insert([
+      {
+        user_id: dispute.raised_by,
+        title: 'Dispute Resolved',
+        message: `Your dispute has been resolved. Resolution: ${resolution}`,
+        type: 'dispute_resolved',
+        related_transaction_id: transaction.id,
+      },
+      {
+        user_id: dispute.raised_against,
+        title: 'Dispute Resolved',
+        message: `The dispute against you has been resolved. Resolution: ${resolution}`,
+        type: 'dispute_resolved',
+        related_transaction_id: transaction.id,
+      },
+    ]);
+
+    return Response.json({
+      success: true,
+      message: 'Dispute resolved successfully',
+      resolution,
+    });
   } catch (error) {
-    console.error('[v0] Resolve dispute error:', error);
+    console.error('Admin dispute resolution error:', error);
     return Response.json(
-      { error: error.message || 'Failed to resolve dispute' },
+      { error: 'Internal server error' },
       { status: 500 }
     );
   }

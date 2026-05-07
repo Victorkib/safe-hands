@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { getAuthenticatedUser, unauthorizedResponse } from '@/lib/apiAuth';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -18,26 +19,8 @@ export async function POST(request, { params }) {
   try {
     const { id } = await params;
 
-    // Get authorization header
-    const authHeader = request.headers.get('authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return Response.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
-    const token = authHeader.substring(7);
-
-    // Verify token and get user
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    
-    if (authError || !user) {
-      return Response.json(
-        { error: 'Invalid token' },
-        { status: 401 }
-      );
-    }
+    const { user } = await getAuthenticatedUser(request);
+    if (!user) return unauthorizedResponse();
 
     // Get dispute
     const { data: dispute, error: disputeError } = await supabase
@@ -150,6 +133,26 @@ export async function POST(request, { params }) {
         { error: 'Failed to update dispute with evidence' },
         { status: 500 }
       );
+    }
+
+    // Also store as structured delivery_evidence so dispute detail can show timeline
+    const { data: transaction, error: transactionError } = await supabase
+      .from('transactions')
+      .select('buyer_id, seller_id')
+      .eq('id', dispute.transaction_id)
+      .single();
+
+    if (!transactionError && transaction) {
+      const submission_type =
+        transaction.buyer_id === user.id ? 'buyer_additional' : 'seller_additional';
+
+      await supabase.from('delivery_evidence').insert({
+        transaction_id: dispute.transaction_id,
+        submitted_by: user.id,
+        submission_type,
+        photos: uploadedUrls,
+        notes: null,
+      });
     }
 
     return Response.json({

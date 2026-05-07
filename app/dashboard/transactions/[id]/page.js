@@ -4,11 +4,13 @@ import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
+import { useAuth } from '@/context/AuthContext';
 
 export default function TransactionDetail() {
   const router = useRouter();
   const params = useParams();
   const { id } = params;
+  const { user: authUser, loading: authLoading } = useAuth();
   
   const [user, setUser] = useState(null);
   const [transaction, setTransaction] = useState(null);
@@ -23,6 +25,12 @@ export default function TransactionDetail() {
   const [confirmationComment, setConfirmationComment] = useState('');
   const [disputeReason, setDisputeReason] = useState('');
   const [disputeDescription, setDisputeDescription] = useState('');
+  const [disputeFiles, setDisputeFiles] = useState([]);
+  const [amountImpact, setAmountImpact] = useState('');
+  const [checkNotReceived, setCheckNotReceived] = useState(false);
+  const [checkConditionMismatch, setCheckConditionMismatch] = useState(false);
+  const [checkTimelineDiscrepancy, setCheckTimelineDiscrepancy] = useState(false);
+  const [timelineNotes, setTimelineNotes] = useState('');
   const [sellerRequest, setSellerRequest] = useState(null);
   const [sellerMessage, setSellerMessage] = useState('');
   const [proposedAmount, setProposedAmount] = useState('');
@@ -31,28 +39,19 @@ export default function TransactionDetail() {
   const [conditionRating, setConditionRating] = useState(5);
   const [itemMatchesDescription, setItemMatchesDescription] = useState(true);
   const [evidenceTimeline, setEvidenceTimeline] = useState([]);
+  const [disputeError, setDisputeError] = useState(null);
 
   useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const { data: { user: authUser } } = await supabase.auth.getUser();
-        if (!authUser) {
-          router.push('/auth/login');
-          return;
-        }
-        setUser(authUser);
-        fetchTransaction(authUser.id);
-      } catch (error) {
-        console.error('Error:', error);
-        setError('Failed to load transaction');
-        setLoading(false);
-      }
-    };
-
-    if (id) {
-      checkAuth();
+    if (!id || authLoading) return;
+    if (!authUser) {
+      router.push('/auth/login');
+      setLoading(false);
+      return;
     }
-  }, [id, router]);
+
+    setUser(authUser);
+    fetchTransaction(authUser.id);
+  }, [id, router, authUser, authLoading]);
 
   const fetchTransaction = async (userId) => {
     try {
@@ -207,36 +206,55 @@ export default function TransactionDetail() {
   };
 
   const handleRaiseDispute = async () => {
+    setDisputeError(null);
     setActionLoading(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
+
+      const formData = new FormData();
+      formData.append('transaction_id', id);
+      formData.append('reason', disputeReason);
+      formData.append('description', disputeDescription);
+
+      if (amountImpact.trim()) formData.append('amount_impact', amountImpact.trim());
+      if (timelineNotes.trim()) formData.append('timeline_notes', timelineNotes.trim());
+
+      formData.append('check_not_received', checkNotReceived ? 'true' : 'false');
+      formData.append('check_condition_mismatch', checkConditionMismatch ? 'true' : 'false');
+      formData.append('check_timeline_discrepancy', checkTimelineDiscrepancy ? 'true' : 'false');
+
+      for (const file of disputeFiles) {
+        formData.append('files', file);
+      }
+
       const response = await fetch('/api/disputes', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          transaction_id: id,
-          reason: disputeReason,
-          description: disputeDescription,
-        }),
+        body: formData,
       });
 
       const result = await response.json();
       
-      if (result.success) {
+      if (response.ok && result.success) {
         alert('Dispute raised successfully');
         setShowDisputeModal(false);
         setDisputeReason('');
         setDisputeDescription('');
+        setDisputeFiles([]);
+        setAmountImpact('');
+        setCheckNotReceived(false);
+        setCheckConditionMismatch(false);
+        setCheckTimelineDiscrepancy(false);
+        setTimelineNotes('');
         fetchTransaction(user.id);
       } else {
-        alert(result.error || 'Failed to raise dispute');
+        setDisputeError(result.error || 'Failed to raise dispute');
       }
     } catch (error) {
       console.error('Dispute error:', error);
-      alert('Failed to raise dispute');
+      setDisputeError('Failed to raise dispute');
     } finally {
       setActionLoading(false);
     }
@@ -524,6 +542,26 @@ export default function TransactionDetail() {
                 )}
                 {evidence.notes && (
                   <p className="text-sm text-gray-800 mt-1">{evidence.notes}</p>
+                )}
+
+                {evidence.photos && evidence.photos.length > 0 && (
+                  <div className="mt-2 grid grid-cols-3 gap-2">
+                    {evidence.photos.map((url, index) => (
+                      <a
+                        key={index}
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block"
+                      >
+                        <img
+                          src={url}
+                          alt={`Evidence photo ${index + 1}`}
+                          className="w-full h-20 object-cover rounded-lg border border-gray-100 hover:opacity-90 transition"
+                        />
+                      </a>
+                    ))}
+                  </div>
                 )}
               </div>
             ))}
@@ -848,6 +886,91 @@ export default function TransactionDetail() {
                 placeholder="Describe the issue in detail..."
               />
             </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Initial Evidence (optional, up to 3 images)
+              </label>
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                multiple
+                onChange={(e) => {
+                  const files = e.target.files ? Array.from(e.target.files) : [];
+                  setDisputeFiles(files.slice(0, 3));
+                }}
+                className="w-full"
+              />
+              {disputeFiles.length > 0 && (
+                <p className="text-xs text-gray-500 mt-2">
+                  Selected: {disputeFiles.length} file{disputeFiles.length === 1 ? '' : 's'}
+                </p>
+              )}
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Amount Impact (optional)
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={amountImpact}
+                onChange={(e) => setAmountImpact(e.target.value)}
+                placeholder="e.g. 2500"
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+
+            <div className="mb-4">
+              <p className="text-sm font-medium text-gray-700 mb-2">Structured Checklist (optional)</p>
+              <div className="space-y-2">
+                <label className="flex items-center gap-2 text-sm text-gray-800">
+                  <input
+                    type="checkbox"
+                    checked={checkNotReceived}
+                    onChange={(e) => setCheckNotReceived(e.target.checked)}
+                  />
+                  Not received
+                </label>
+                <label className="flex items-center gap-2 text-sm text-gray-800">
+                  <input
+                    type="checkbox"
+                    checked={checkConditionMismatch}
+                    onChange={(e) => setCheckConditionMismatch(e.target.checked)}
+                  />
+                  Condition mismatch / not as described
+                </label>
+                <label className="flex items-center gap-2 text-sm text-gray-800">
+                  <input
+                    type="checkbox"
+                    checked={checkTimelineDiscrepancy}
+                    onChange={(e) => setCheckTimelineDiscrepancy(e.target.checked)}
+                  />
+                  Timeline discrepancy
+                </label>
+              </div>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Timeline Notes (optional)
+              </label>
+              <textarea
+                value={timelineNotes}
+                onChange={(e) => setTimelineNotes(e.target.value)}
+                rows="2"
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Key dates, communication milestones, or expected delivery window..."
+              />
+            </div>
+
+            {disputeError && (
+              <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {disputeError}
+              </div>
+            )}
             <div className="flex gap-2">
               <button
                 onClick={handleRaiseDispute}
@@ -861,6 +984,12 @@ export default function TransactionDetail() {
                   setShowDisputeModal(false);
                   setDisputeReason('');
                   setDisputeDescription('');
+                  setDisputeFiles([]);
+                  setAmountImpact('');
+                  setCheckNotReceived(false);
+                  setCheckConditionMismatch(false);
+                  setCheckTimelineDiscrepancy(false);
+                  setTimelineNotes('');
                 }}
                 className="flex-1 bg-slate-200 text-slate-700 px-4 py-2.5 rounded-xl hover:bg-slate-300 transition font-semibold"
               >

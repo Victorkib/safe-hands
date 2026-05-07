@@ -29,6 +29,7 @@ export default function AdminListingsPage() {
     
     if (!profile || profile.role !== 'admin') {
       router.push('/dashboard');
+      setLoading(false);
       return;
     }
     

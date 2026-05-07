@@ -29,6 +29,7 @@ export default function AdminDashboard() {
     if (!authLoading) {
       if (profile?.role !== 'admin') {
         router.push('/dashboard');
+        setLoading(false);
       } else {
         fetchStats();
         fetchUsers();

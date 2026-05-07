@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
+import { supabase } from '@/lib/supabaseClient';
 
 export default function DisputesPage() {
   const router = useRouter();
@@ -35,8 +36,11 @@ export default function DisputesPage() {
 
   const fetchDisputes = async () => {
     try {
+      const { data: { session } } = await supabase.auth.getSession();
       const response = await fetch('/api/disputes', {
-        credentials: 'same-origin',
+        headers: {
+          Authorization: `Bearer ${session?.access_token || ''}`,
+        },
       });
       const result = await response.json();
       if (result.success) {

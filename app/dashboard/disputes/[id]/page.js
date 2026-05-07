@@ -4,11 +4,13 @@ import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
+import { useAuth } from '@/context/AuthContext';
 
 export default function DisputeDetail() {
   const router = useRouter();
   const params = useParams();
   const { id } = params;
+  const { user: authUser, profile, loading: authLoading } = useAuth();
   
   const [user, setUser] = useState(null);
   const [dispute, setDispute] = useState(null);
@@ -21,52 +23,48 @@ export default function DisputeDetail() {
   const [resolution, setResolution] = useState('');
   const [adminNotes, setAdminNotes] = useState('');
   const [userRole, setUserRole] = useState(null);
+  const [evidenceTimeline, setEvidenceTimeline] = useState([]);
 
   useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        if (!id) return;
-        const { data: { user: authUser } } = await supabase.auth.getUser();
-        if (!authUser) {
-          router.push('/auth/login');
-          return;
-        }
-        setUser(authUser);
-        
-        // Fetch user role
-        const { data: userData } = await supabase
-          .from('users')
-          .select('role')
-          .eq('id', authUser.id)
-          .single();
-        
-        setUserRole(userData?.role || null);
-        fetchDispute(authUser.id);
-      } catch (error) {
-        console.error('Error:', error);
-        setError('Failed to load dispute');
-        setLoading(false);
-      } finally {
-        setLoading(false);
-      }
-    };
-    if (id) {
-      checkAuth();
+    if (!id || authLoading) return;
+    if (!authUser) {
+      router.push('/auth/login');
+      setLoading(false);
+      return;
     }
-  }, [id, router]);
+    setUser(authUser);
+    setUserRole(profile?.role || null);
+    fetchDispute(authUser.id).finally(() => setLoading(false));
+  }, [id, router, authUser, profile, authLoading]);
 
   const fetchDispute = async (userId) => {
     const { data: { session } } = await supabase.auth.getSession();
-    const response = await fetch(`/api/disputes`, {
+
+    // Fetch all disputes for this user and find the one we need
+    const disputesResponse = await fetch(`/api/disputes`, {
       headers: {
         'Authorization': `Bearer ${session.access_token}`,
       },
     });
-    const result = await response.json();
-    if (result.success) {
-      const disputeData = result.disputes.find(d => d.id === id);
+    const disputesResult = await disputesResponse.json();
+    if (disputesResult.success) {
+      const disputeData = disputesResult.disputes.find(d => d.id === id);
       if (disputeData) {
         setDispute(disputeData);
+        // Fetch structured evidence timeline for the underlying transaction
+        if (disputeData?.transaction?.id) {
+          const evidenceResponse = await fetch(`/api/transactions/${disputeData.transaction.id}/evidence`, {
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`,
+            },
+          });
+          if (evidenceResponse.ok) {
+            const evidenceResult = await evidenceResponse.json();
+            if (evidenceResult.success) {
+              setEvidenceTimeline(evidenceResult.evidence || []);
+            }
+          }
+        }
       } else {
         setError('Dispute not found');
       }
@@ -110,7 +108,7 @@ export default function DisputeDetail() {
     setUploading(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const response = await fetch(`/api/disputes/${id}/resolve`, {
+      const response = await fetch(`/api/admin/disputes/${id}/resolve`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
@@ -225,17 +223,77 @@ export default function DisputeDetail() {
         </div>
 
         <div>
-          <p className="text-sm text-gray-600 mb-2">Evidence</p>
-          {dispute.evidence_urls && dispute.evidence_urls.length > 0 ? (
-            <div className="grid grid-cols-3 gap-2">
-              {dispute.evidence_urls.map((url, index) => (
-                <a key={index} href={url} target="_blank" rel="noopener noreferrer">
-                  <img src={url} alt={`Evidence ${index + 1}`} className="w-full h-32 object-cover rounded-lg hover:opacity-80 transition" />
-                </a>
+          <p className="text-sm text-gray-600 mb-2">Evidence Timeline</p>
+          {evidenceTimeline.length === 0 ? (
+            <p className="text-gray-500">No evidence submitted yet.</p>
+          ) : (
+            <div className="space-y-3">
+              {evidenceTimeline.map((evidence) => (
+                <div
+                  key={evidence.id}
+                  className={`border rounded-lg p-4 ${
+                    evidence.submission_type === 'seller_ship'
+                      ? 'border-blue-200 bg-blue-50'
+                      : evidence.submission_type === 'buyer_receive'
+                      ? 'border-green-200 bg-green-50'
+                      : 'border-gray-200 bg-gray-50'
+                  }`}
+                >
+                  <div className="flex justify-between items-start mb-1">
+                    <p className="text-sm font-semibold text-gray-900">
+                      {evidence.submission_type === 'seller_ship'
+                        ? 'Seller Shipping Evidence'
+                        : evidence.submission_type === 'buyer_receive'
+                        ? 'Buyer Delivery Confirmation'
+                        : 'Additional Evidence'}
+                    </p>
+                    <p className="text-xs text-gray-600">
+                      {new Date(evidence.submitted_at).toLocaleString()}
+                    </p>
+                  </div>
+                  <p className="text-xs text-gray-700 mb-1">
+                    Submitted by: {evidence.submitter?.full_name || evidence.submitter?.email || 'Unknown user'}
+                  </p>
+                  {evidence.tracking_number && (
+                    <p className="text-sm text-gray-800">Tracking: {evidence.tracking_number}</p>
+                  )}
+                  {evidence.courier && (
+                    <p className="text-sm text-gray-800">Courier: {evidence.courier}</p>
+                  )}
+                  {evidence.condition_rating && (
+                    <p className="text-sm text-gray-800">Condition rating: {evidence.condition_rating}/5</p>
+                  )}
+                  {typeof evidence.item_matches_description === 'boolean' && (
+                    <p className="text-sm text-gray-800">
+                      Matches description: {evidence.item_matches_description ? 'Yes' : 'No'}
+                    </p>
+                  )}
+                  {evidence.notes && (
+                    <p className="text-sm text-gray-800 mt-1">{evidence.notes}</p>
+                  )}
+
+                  {evidence.photos && evidence.photos.length > 0 && (
+                    <div className="mt-2 grid grid-cols-3 gap-2">
+                      {evidence.photos.map((url, index) => (
+                        <a
+                          key={index}
+                          href={url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block"
+                        >
+                          <img
+                            src={url}
+                            alt={`Evidence photo ${index + 1}`}
+                            className="w-full h-20 object-cover rounded-lg border border-gray-100 hover:opacity-90 transition"
+                          />
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                </div>
               ))}
             </div>
-          ) : (
-            <p className="text-gray-500">No evidence uploaded</p>
           )}
         </div>
 
@@ -254,7 +312,7 @@ export default function DisputeDetail() {
       {isInvolved && dispute.status === 'open' && (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 mb-6">
           <h2 className="text-xl font-bold text-gray-900 mb-4">Actions</h2>
-          {dispute.evidence_urls && dispute.evidence_urls.length < 3 && (
+          {(dispute.evidence_urls?.length || 0) < 3 && (
             <button
               onClick={() => setShowEvidenceModal(true)}
               className="w-full bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition font-medium mb-2"

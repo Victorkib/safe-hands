@@ -7,10 +7,12 @@ import { useAuth } from '@/context/AuthContext';
 
 export default function DashboardRedirect() {
   const router = useRouter();
-  const { user, profile } = useAuth();
+  const { user, profile, loading: authLoading } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    if (authLoading) return;
+
     const redirectBasedOnRole = async () => {
       try {
         if (!user) {
@@ -46,7 +48,7 @@ export default function DashboardRedirect() {
     };
 
     redirectBasedOnRole();
-  }, [router, user, profile]);
+  }, [router, user, profile, authLoading]);
 
   if (isLoading) {
     return (
