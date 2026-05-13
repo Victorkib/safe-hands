@@ -1,5 +1,8 @@
--- Reset a single transaction stuck in payment_pending when STK callback never reached the app
--- (e.g. MPESA_CALLBACK_URL / ngrok offline). Safe to re-run: only updates matching rows.
+-- Reset ONE hard-coded transaction (legacy scratch script).
+-- For ngrok/orphan STK in general, use 023_reset_orphan_mpesa_checkouts.sql (preview + bulk or UUID filter).
+--
+-- Original use: STK callback never reached the app (e.g. MPESA_CALLBACK_URL / ngrok offline).
+-- Safe to re-run: only updates matching rows.
 
 INSERT INTO public.transaction_history (transaction_id, old_status, new_status, changed_by, reason)
 SELECT

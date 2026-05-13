@@ -1,0 +1,18 @@
+{
+  "buckets": [
+    {
+      "id": "listing-images",
+      "public": true,
+      "fileSizeLimitBytes": 5242880,
+      "allowedMimeTypes": null,
+      "note": "Matches app/api/listings — 5MB; null MIME = allow common browser uploads."
+    },
+    {
+      "id": "dispute-evidence",
+      "public": true,
+      "fileSizeLimitBytes": 5242880,
+      "allowedMimeTypes": ["image/jpeg", "image/png", "image/webp"],
+      "note": "Matches lib/evidenceUpload.js"
+    }
+  ]
+}

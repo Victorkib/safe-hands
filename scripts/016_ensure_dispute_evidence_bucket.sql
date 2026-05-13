@@ -1,4 +1,5 @@
 -- Ensure storage bucket for dispute/delivery evidence exists (public URLs used by the app).
+-- For new projects, prefer scripts/021_ensure_all_app_storage_buckets.sql (all app buckets in one file).
 -- Run once in the Supabase SQL editor for the Safe Hands project.
 -- You can also create the bucket in Dashboard → Storage with the same name and MIME allowlist.
 

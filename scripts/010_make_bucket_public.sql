@@ -1,4 +1,5 @@
--- Make listing-images bucket public
+-- Make listing-images bucket public (bucket must exist first).
+-- Prefer scripts/021_ensure_all_app_storage_buckets.sql — it creates listing-images and sets public in one step.
 -- Run this in Supabase SQL Editor
 
 UPDATE storage.buckets 
