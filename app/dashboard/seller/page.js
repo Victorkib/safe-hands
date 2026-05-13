@@ -8,7 +8,7 @@ import { useAuth } from '@/context/AuthContext';
 
 export default function SellerDashboard() {
   const router = useRouter();
-  const { user, loading: authLoading } = useAuth();
+  const { user, profile, loading: authLoading } = useAuth();
   const [transactions, setTransactions] = useState([]);
   const [pendingApprovals, setPendingApprovals] = useState([]);
   const [listings, setListings] = useState([]);
@@ -125,6 +125,20 @@ export default function SellerDashboard() {
         <p className="text-emerald-100 mt-2 max-w-2xl">
           Approve buyer requests faster, ship with evidence, and stay on top of active payouts.
         </p>
+        <Link
+          href="/dashboard/seller/wallet"
+          className="mt-5 inline-flex items-center gap-2 rounded-xl border border-white/35 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-white/20"
+        >
+          Earnings & balance →
+        </Link>
+        {profile?.role === 'buyer_seller' && (
+          <div className="mt-5 rounded-xl border border-white/30 bg-white/10 px-4 py-3 text-sm text-white">
+            <span className="font-semibold">You also buy on Safe Hands.</span>{' '}
+            <Link href="/dashboard/buyer" className="underline font-semibold hover:text-white/90">
+              Open buying hub →
+            </Link>
+          </div>
+        )}
       </div>
 
       {/* Stats Cards */}
@@ -216,7 +230,7 @@ export default function SellerDashboard() {
           </div>
         </Link>
 
-        <Link href="/marketplace" className="bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md hover:border-orange-300 transition-all duration-200 p-6 group">
+        <Link href="/dashboard/marketplace" className="bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md hover:border-orange-300 transition-all duration-200 p-6 group">
           <div className="flex items-center gap-4">
             <div className="w-14 h-14 bg-orange-100 rounded-lg flex items-center justify-center group-hover:bg-orange-600 transition-colors duration-200">
               <svg className="w-7 h-7 text-orange-600 group-hover:text-white transition-colors duration-200" fill="currentColor" viewBox="0 0 24 24">
@@ -326,12 +340,22 @@ export default function SellerDashboard() {
                       {new Date(tx.created_at).toLocaleDateString()}
                     </td>
                     <td className="px-6 py-4 text-sm">
-                      <Link
-                        href={`/dashboard/transactions/${tx.id}`}
-                        className="text-green-600 hover:text-green-700 font-medium"
-                      >
-                        View
-                      </Link>
+                      <div className="flex flex-col gap-1">
+                        <Link
+                          href={`/dashboard/transactions/${tx.id}`}
+                          className="text-green-600 hover:text-green-700 font-medium"
+                        >
+                          View
+                        </Link>
+                        {(tx.status === 'escrow' || tx.status === 'delivered') && (
+                          <Link
+                            href={`/dashboard/transactions/${tx.id}?openDispute=1`}
+                            className="text-red-600 hover:text-red-700 font-medium"
+                          >
+                            Dispute
+                          </Link>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}

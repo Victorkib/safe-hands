@@ -1,5 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
 import { getAuthenticatedUser, unauthorizedResponse } from '@/lib/apiAuth';
+import {
+  uploadEvidenceFilesToBucket,
+  MAX_FILES_DISPUTE_APPEND,
+} from '@/lib/evidenceUpload';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -22,7 +26,6 @@ export async function POST(request, { params }) {
     const { user } = await getAuthenticatedUser(request);
     if (!user) return unauthorizedResponse();
 
-    // Get dispute
     const { data: dispute, error: disputeError } = await supabase
       .from('disputes')
       .select('*')
@@ -30,13 +33,9 @@ export async function POST(request, { params }) {
       .single();
 
     if (disputeError || !dispute) {
-      return Response.json(
-        { error: 'Dispute not found' },
-        { status: 404 }
-      );
+      return Response.json({ error: 'Dispute not found' }, { status: 404 });
     }
 
-    // Verify user is involved in dispute
     if (dispute.raised_by !== user.id && dispute.raised_against !== user.id) {
       return Response.json(
         { error: 'You can only upload evidence for disputes you are involved in' },
@@ -44,81 +43,44 @@ export async function POST(request, { params }) {
       );
     }
 
-    // Parse form data
     const formData = await request.formData();
-    const files = formData.getAll('files');
+    const files = formData
+      .getAll('files')
+      .filter((f) => f && typeof f.arrayBuffer === 'function');
 
     if (!files || files.length === 0) {
-      return Response.json(
-        { error: 'No files provided' },
-        { status: 400 }
-      );
+      return Response.json({ error: 'No files provided' }, { status: 400 });
     }
 
-    // Check file count limit (max 3)
-    if (files.length > 3) {
-      return Response.json(
-        { error: 'Maximum 3 files allowed' },
-        { status: 400 }
-      );
-    }
-
-    // Check current evidence count
     const currentEvidenceCount = dispute.evidence_urls ? dispute.evidence_urls.length : 0;
-    if (currentEvidenceCount + files.length > 3) {
+    const remainingSlots = MAX_FILES_DISPUTE_APPEND - currentEvidenceCount;
+    if (remainingSlots < 1) {
       return Response.json(
-        { error: `Maximum 3 evidence files allowed. You have ${currentEvidenceCount} already.` },
+        { error: 'Maximum evidence files for this dispute have already been uploaded.' },
+        { status: 400 }
+      );
+    }
+    if (files.length > remainingSlots) {
+      return Response.json(
+        {
+          error: `You can add at most ${remainingSlots} more file(s). This dispute already has ${currentEvidenceCount} of ${MAX_FILES_DISPUTE_APPEND} allowed.`,
+        },
         { status: 400 }
       );
     }
 
-    // Upload files to Supabase Storage
-    const uploadedUrls = [];
-    for (const file of files) {
-      // Validate file type
-      const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
-      if (!allowedTypes.includes(file.type)) {
-        return Response.json(
-          { error: `Invalid file type: ${file.type}. Only JPEG, PNG, and WebP are allowed.` },
-          { status: 400 }
-        );
-      }
+    const { error: uploadError, urls: uploadedUrls } = await uploadEvidenceFilesToBucket(
+      supabaseStorage,
+      user.id,
+      files,
+      'dispute/append',
+      { maxFiles: remainingSlots }
+    );
 
-      // Validate file size (max 1MB)
-      const maxSize = 1 * 1024 * 1024; // 1MB in bytes
-      if (file.size > maxSize) {
-        return Response.json(
-          { error: `File ${file.name} exceeds 1MB limit` },
-          { status: 400 }
-        );
-      }
-
-      // Generate unique filename
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${user.id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
-
-      // Upload to Supabase Storage
-      const { data: uploadData, error: uploadError } = await supabaseStorage.storage
-        .from('dispute-evidence')
-        .upload(fileName, file);
-
-      if (uploadError) {
-        console.error('File upload error:', uploadError);
-        return Response.json(
-          { error: `Failed to upload file ${file.name}` },
-          { status: 500 }
-        );
-      }
-
-      // Get public URL
-      const { data: { publicUrl } } = supabaseStorage.storage
-        .from('dispute-evidence')
-        .getPublicUrl(fileName);
-
-      uploadedUrls.push(publicUrl);
+    if (uploadError) {
+      return Response.json({ error: uploadError }, { status: 400 });
     }
 
-    // Update dispute with evidence URLs
     const updatedEvidenceUrls = [...(dispute.evidence_urls || []), ...uploadedUrls];
     const { error: updateError } = await supabase
       .from('disputes')
@@ -129,13 +91,9 @@ export async function POST(request, { params }) {
 
     if (updateError) {
       console.error('Dispute update error:', updateError);
-      return Response.json(
-        { error: 'Failed to update dispute with evidence' },
-        { status: 500 }
-      );
+      return Response.json({ error: 'Failed to update dispute with evidence' }, { status: 500 });
     }
 
-    // Also store as structured delivery_evidence so dispute detail can show timeline
     const { data: transaction, error: transactionError } = await supabase
       .from('transactions')
       .select('buyer_id, seller_id')
@@ -160,12 +118,8 @@ export async function POST(request, { params }) {
       message: 'Evidence uploaded successfully',
       evidence_urls: uploadedUrls,
     });
-
   } catch (error) {
     console.error('Evidence upload error:', error);
-    return Response.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return Response.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

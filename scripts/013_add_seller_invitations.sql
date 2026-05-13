@@ -24,6 +24,8 @@ CREATE INDEX IF NOT EXISTS idx_seller_invitations_email_status
 CREATE INDEX IF NOT EXISTS idx_seller_invitations_inviter
   ON seller_invitations(invited_by_user_id, created_at DESC);
 
+DROP TRIGGER IF EXISTS seller_invitations_updated_at ON seller_invitations;
+
 CREATE TRIGGER seller_invitations_updated_at
 BEFORE UPDATE ON seller_invitations
 FOR EACH ROW

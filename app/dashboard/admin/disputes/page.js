@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/context/AuthContext';
+import { toast } from 'sonner';
 
 const statusColors = {
   open: 'bg-blue-100 text-blue-700',
@@ -21,8 +22,11 @@ export default function AdminDisputesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [filterStatus, setFilterStatus] = useState('all');
+  const [queueFilter, setQueueFilter] = useState('cleared');
   const [selectedDispute, setSelectedDispute] = useState(null);
   const [showModal, setShowModal] = useState(false);
+  const [modalEvidence, setModalEvidence] = useState([]);
+  const [modalEvidenceLoading, setModalEvidenceLoading] = useState(false);
   const [decision, setDecision] = useState('');
   const [notes, setNotes] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
@@ -41,6 +45,40 @@ export default function AdminDisputesPage() {
     fetchDisputes();
   }, [profile, authLoading, router]);
 
+  useEffect(() => {
+    if (!showModal || !selectedDispute?.transaction?.id) {
+      setModalEvidence([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setModalEvidenceLoading(true);
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const res = await fetch(
+          `/api/transactions/${selectedDispute.transaction.id}/evidence`,
+          {
+            headers: {
+              Authorization: `Bearer ${session?.access_token || ''}`,
+            },
+          }
+        );
+        const j = await res.json();
+        if (!cancelled && j.success) {
+          setModalEvidence(j.evidence || []);
+        }
+      } catch (e) {
+        console.error(e);
+        if (!cancelled) setModalEvidence([]);
+      } finally {
+        if (!cancelled) setModalEvidenceLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [showModal, selectedDispute?.transaction?.id]);
+
   const fetchDisputes = async () => {
     setLoading(true);
     setError(null);
@@ -49,9 +87,14 @@ export default function AdminDisputesPage() {
         .from('disputes')
         .select(`
           *,
-          transaction:transaction_id(id, amount, buyer_id, seller_id, status),
-          buyer:buyer_id(full_name, email),
-          seller:seller_id(full_name, email)
+          transaction:transactions(
+            id,
+            amount,
+            description,
+            status,
+            buyer:users!transactions_buyer_id_fkey(full_name, email),
+            seller:users!transactions_seller_id_fkey(full_name, email)
+          )
         `)
         .order('created_at', { ascending: false });
 
@@ -65,9 +108,11 @@ export default function AdminDisputesPage() {
     }
   };
 
-  const filteredDisputes = disputes.filter(dispute => {
-    if (filterStatus === 'all') return true;
-    return dispute.status === filterStatus;
+  const filteredDisputes = disputes.filter((dispute) => {
+    if (filterStatus !== 'all' && dispute.status !== filterStatus) return false;
+    if (queueFilter === 'all') return true;
+    const screening = dispute.submission_screening || 'cleared';
+    return screening === queueFilter;
   });
 
   const openModal = (dispute) => {
@@ -84,6 +129,7 @@ export default function AdminDisputesPage() {
     setDecision('');
     setNotes('');
     setActionMessage(null);
+    setModalEvidence([]);
   };
 
   const handleResolveDispute = async () => {
@@ -128,6 +174,7 @@ export default function AdminDisputesPage() {
         type: 'success',
         text: 'Dispute resolved successfully',
       });
+      toast.success('Dispute resolved successfully');
 
       setTimeout(closeModal, 1500);
     } catch (err) {
@@ -171,17 +218,95 @@ export default function AdminDisputesPage() {
                 <p className="text-lg font-bold text-gray-900">KES {selectedDispute.transaction?.amount?.toLocaleString() || 'N/A'}</p>
               </div>
 
-              <div className="grid grid-cols-2 gap-4 pt-3 border-t border-gray-200">
+                <div className="grid grid-cols-2 gap-4 pt-3 border-t border-gray-200">
                 <div>
                   <p className="text-xs text-gray-600 uppercase font-semibold mb-1">Buyer</p>
-                  <p className="text-sm font-semibold text-gray-900">{selectedDispute.buyer?.full_name}</p>
-                  <p className="text-xs text-gray-600">{selectedDispute.buyer?.email}</p>
+                  <p className="text-sm font-semibold text-gray-900">
+                    {selectedDispute.transaction?.buyer?.full_name || '—'}
+                  </p>
+                  <p className="text-xs text-gray-600">{selectedDispute.transaction?.buyer?.email}</p>
                 </div>
                 <div>
                   <p className="text-xs text-gray-600 uppercase font-semibold mb-1">Seller</p>
-                  <p className="text-sm font-semibold text-gray-900">{selectedDispute.seller?.full_name}</p>
-                  <p className="text-xs text-gray-600">{selectedDispute.seller?.email}</p>
+                  <p className="text-sm font-semibold text-gray-900">
+                    {selectedDispute.transaction?.seller?.full_name || '—'}
+                  </p>
+                  <p className="text-xs text-gray-600">{selectedDispute.transaction?.seller?.email}</p>
                 </div>
+              </div>
+
+              {(selectedDispute.submission_screening || 'cleared') === 'held' && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                  <strong>Triage queue:</strong> filed with minimal evidence (e.g. one photo and shorter narrative).
+                  Review carefully before resolving.
+                </div>
+              )}
+
+              {selectedDispute.description && (
+                <div>
+                  <p className="text-xs text-gray-600 uppercase font-semibold">Buyer / seller statement</p>
+                  <p className="text-sm text-gray-900 whitespace-pre-wrap mt-1">{selectedDispute.description}</p>
+                </div>
+              )}
+
+              {selectedDispute.evidence_urls && selectedDispute.evidence_urls.length > 0 && (
+                <div>
+                  <p className="text-xs text-gray-600 uppercase font-semibold mb-2">Images at filing</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {selectedDispute.evidence_urls.map((url) => (
+                      <a
+                        key={url}
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block rounded-lg overflow-hidden border border-gray-200 hover:opacity-90"
+                      >
+                        <img src={url} alt="" className="h-24 w-full object-cover" />
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="border-t border-gray-200 pt-4">
+                <p className="text-xs text-gray-600 uppercase font-semibold mb-2">Full transaction evidence timeline</p>
+                {modalEvidenceLoading ? (
+                  <p className="text-sm text-gray-500">Loading timeline…</p>
+                ) : modalEvidence.length === 0 ? (
+                  <p className="text-sm text-gray-500">No structured evidence rows yet.</p>
+                ) : (
+                  <div className="space-y-3 max-h-56 overflow-y-auto pr-1">
+                    {modalEvidence.map((ev) => (
+                      <div
+                        key={ev.id}
+                        className="rounded-lg border border-gray-200 bg-white p-3 text-xs text-gray-800"
+                      >
+                        <div className="flex justify-between gap-2 font-semibold text-gray-900">
+                          <span>{ev.submission_type}</span>
+                          <span className="text-gray-500 font-normal">
+                            {ev.submitted_at ? new Date(ev.submitted_at).toLocaleString() : ''}
+                          </span>
+                        </div>
+                        {ev.notes && <p className="mt-1 whitespace-pre-wrap">{ev.notes}</p>}
+                        {ev.photos && ev.photos.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {ev.photos.map((u) => (
+                              <a
+                                key={u}
+                                href={u}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="block h-14 w-14 overflow-hidden rounded border border-gray-100"
+                              >
+                                <img src={u} alt="" className="h-full w-full object-cover" />
+                              </a>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -326,6 +451,28 @@ export default function AdminDisputesPage() {
           ))}
         </div>
 
+        <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-gray-100">
+          <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Evidence queue</span>
+          {[
+            { id: 'cleared', label: 'Standard queue' },
+            { id: 'held', label: 'Triage (thin filing)' },
+            { id: 'all', label: 'All filings' },
+          ].map((q) => (
+            <button
+              key={q.id}
+              type="button"
+              onClick={() => setQueueFilter(q.id)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                queueFilter === q.id
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              {q.label}
+            </button>
+          ))}
+        </div>
+
         {/* Disputes List */}
         {filteredDisputes.length === 0 ? (
           <div className="py-12 text-center">
@@ -346,8 +493,37 @@ export default function AdminDisputesPage() {
                       <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${statusColors[dispute.status]}`}>
                         {dispute.status.replace('_', ' ')}
                       </span>
+                      {(dispute.submission_screening || 'cleared') === 'held' && (
+                        <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-900">
+                          Triage
+                        </span>
+                      )}
                     </div>
                     <p className="text-sm text-gray-600">{dispute.reason}</p>
+                    <p className="text-xs text-gray-500 mt-1 line-clamp-2">
+                      {dispute.description || 'No description'}
+                    </p>
+                    <div className="flex flex-wrap gap-3 mt-3">
+                      <Link
+                        href={`/dashboard/disputes/${dispute.id}`}
+                        className="text-sm font-semibold text-indigo-600 hover:text-indigo-800"
+                      >
+                        Open case & evidence →
+                      </Link>
+                      {dispute.transaction?.id && (
+                        <Link
+                          href={`/dashboard/transactions/${dispute.transaction.id}`}
+                          className="text-sm font-semibold text-slate-600 hover:text-slate-900"
+                        >
+                          View transaction →
+                        </Link>
+                      )}
+                    </div>
+                    {Array.isArray(dispute.evidence_urls) && dispute.evidence_urls.length > 0 && (
+                      <p className="text-xs text-gray-500 mt-2">
+                        {dispute.evidence_urls.length} image(s) attached at filing
+                      </p>
+                    )}
                   </div>
                   <button
                     onClick={() => openModal(dispute)}
@@ -365,11 +541,11 @@ export default function AdminDisputesPage() {
                   </div>
                   <div>
                     <p className="text-xs text-gray-600 font-semibold mb-1">Buyer</p>
-                    <p className="text-gray-900">{dispute.buyer?.full_name}</p>
+                    <p className="text-gray-900">{dispute.transaction?.buyer?.full_name || '—'}</p>
                   </div>
                   <div>
                     <p className="text-xs text-gray-600 font-semibold mb-1">Seller</p>
-                    <p className="text-gray-900">{dispute.seller?.full_name}</p>
+                    <p className="text-gray-900">{dispute.transaction?.seller?.full_name || '—'}</p>
                   </div>
                   <div>
                     <p className="text-xs text-gray-600 font-semibold mb-1">Filed</p>

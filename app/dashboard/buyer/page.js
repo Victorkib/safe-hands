@@ -10,7 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 
 export default function BuyerDashboard() {
   const router = useRouter();
-  const { user, loading: authLoading } = useAuth();
+  const { user, profile, loading: authLoading } = useAuth();
   const [transactions, setTransactions] = useState([]);
   const [stats, setStats] = useState({
     total: 0,
@@ -258,10 +258,18 @@ export default function BuyerDashboard() {
       <div className="space-y-8">
         <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-indigo-600 via-blue-600 to-cyan-600 text-white p-8 shadow-lg">
           <h1 className="text-3xl font-bold tracking-tight">Welcome Back, Buyer</h1>
-          <p className="text-blue-100 mt-2 max-w-2xl">
-            Track every escrow stage, confirm delivery with confidence, and resolve issues early if needed.
-          </p>
-        </div>
+        <p className="text-blue-100 mt-2 max-w-2xl">
+          Track every escrow stage, confirm delivery with confidence, and resolve issues early if needed.
+        </p>
+        {profile?.role === 'buyer_seller' && (
+          <div className="mt-5 rounded-xl border border-white/30 bg-white/10 px-4 py-3 text-sm text-white">
+            <span className="font-semibold">You also sell on Safe Hands.</span>{' '}
+            <Link href="/dashboard/seller" className="underline font-semibold hover:text-white/90">
+              Open selling hub →
+            </Link>
+          </div>
+        )}
+      </div>
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
@@ -338,7 +346,7 @@ export default function BuyerDashboard() {
             </div>
           </Link>
 
-          <Link href="/marketplace" className="bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md hover:border-blue-300 transition-all duration-200 p-6 group">
+          <Link href="/dashboard/marketplace" className="bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md hover:border-blue-300 transition-all duration-200 p-6 group">
             <div className="flex items-center gap-4">
               <div className="w-14 h-14 bg-purple-100 rounded-lg flex items-center justify-center group-hover:bg-purple-600 transition-colors duration-200">
                 <svg className="w-7 h-7 text-purple-600 group-hover:text-white transition-colors duration-200" fill="currentColor" viewBox="0 0 24 24">
@@ -451,12 +459,23 @@ export default function BuyerDashboard() {
                         {formatDate(transaction.created_at)}
                       </td>
                       <td className="px-6 py-4">
-                        <Link
-                          href={`/dashboard/transactions/${transaction.id}`}
-                          className="text-blue-600 hover:text-blue-700 font-semibold text-sm transition-colors duration-150"
-                        >
-                          View Details →
-                        </Link>
+                        <div className="flex flex-col gap-1">
+                          <Link
+                            href={`/dashboard/transactions/${transaction.id}`}
+                            className="text-blue-600 hover:text-blue-700 font-semibold text-sm transition-colors duration-150"
+                          >
+                            View Details →
+                          </Link>
+                          {(transaction.status === 'escrow' ||
+                            transaction.status === 'delivered') && (
+                            <Link
+                              href={`/dashboard/transactions/${transaction.id}?openDispute=1`}
+                              className="text-red-600 hover:text-red-700 font-semibold text-sm transition-colors duration-150"
+                            >
+                              Raise dispute
+                            </Link>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))

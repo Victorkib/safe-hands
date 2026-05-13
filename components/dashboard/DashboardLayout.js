@@ -59,7 +59,7 @@ export default function DashboardLayout({ children, title, breadcrumbs }) {
     },
     {
       name: 'Marketplace',
-      href: '/marketplace',
+      href: '/dashboard/marketplace',
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l-1.5 7.5L16 21l-4-2-4 2-1.5-7.5z" />
@@ -111,7 +111,9 @@ export default function DashboardLayout({ children, title, breadcrumbs }) {
     }
   ];
 
-  const filteredNavigation = navigation.filter(item => item.roles.includes(userRole || ''));
+  const filteredNavigation = navigation
+    .filter((item) => item.roles.includes(userRole || ''))
+    .filter((item, index, items) => index === items.findIndex((candidate) => candidate.href === item.href));
 
   return (
     <div className="min-h-screen bg-background">

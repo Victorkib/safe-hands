@@ -272,7 +272,7 @@ export default function ListingsManagement() {
                     <td className="px-6 py-4 text-sm">
                       <div className="flex gap-2">
                         <Link
-                          href={`/listings/${listing.id}`}
+                          href={`/dashboard/marketplace/${listing.id}`}
                           target="_blank"
                           className="text-blue-600 hover:text-blue-700 font-medium"
                         >

@@ -41,6 +41,8 @@ CREATE INDEX IF NOT EXISTS idx_seller_tx_requests_seller
 CREATE INDEX IF NOT EXISTS idx_seller_tx_requests_buyer
   ON seller_transaction_requests(buyer_id, created_at DESC);
 
+DROP TRIGGER IF EXISTS seller_transaction_requests_updated_at ON seller_transaction_requests;
+
 CREATE TRIGGER seller_transaction_requests_updated_at
 BEFORE UPDATE ON seller_transaction_requests
 FOR EACH ROW

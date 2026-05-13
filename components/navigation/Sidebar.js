@@ -39,7 +39,7 @@ export default function Sidebar() {
       },
       {
         name: 'Marketplace',
-        href: '/marketplace',
+        href: '/dashboard/marketplace',
         icon: '🛒',
       },
     ];
@@ -69,17 +69,28 @@ export default function Sidebar() {
         },
       ];
     } else if (userRole === 'seller' || userRole === 'buyer_seller') {
+      const hybridBuying =
+        userRole === 'buyer_seller'
+          ? [
+              {
+                name: 'Buying hub',
+                href: '/dashboard/buyer',
+                icon: '🛍️',
+              },
+            ]
+          : [];
       return [
         ...baseItems,
+        ...hybridBuying,
         {
           name: 'My Listings',
           href: '/dashboard/listings',
           icon: '📦',
         },
         {
-          name: 'Orders',
-          href: '/dashboard/seller',
-          icon: '📋',
+          name: 'Earnings & balance',
+          href: '/dashboard/seller/wallet',
+          icon: '💰',
         },
         {
           name: 'Disputes',
@@ -96,11 +107,6 @@ export default function Sidebar() {
       // Buyer
       return [
         ...baseItems,
-        {
-          name: 'My Purchases',
-          href: '/dashboard/buyer',
-          icon: '🛍️',
-        },
         {
           name: 'Disputes',
           href: '/dashboard/disputes',
@@ -143,9 +149,9 @@ export default function Sidebar() {
 
         {/* Navigation Items */}
         <nav className="flex-1 overflow-y-auto p-4 space-y-2">
-          {menuItems.map((item) => (
+          {menuItems.map((item, index) => (
             <Link
-              key={item.href}
+              key={`${item.name}-${item.href}-${index}`}
               href={item.href}
               className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
                 isActive(item.href)

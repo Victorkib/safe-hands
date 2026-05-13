@@ -1,10 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/context/AuthContext';
+import { toast } from 'sonner';
+import { validateDisputeDescription, MIN_DESCRIPTION_LEN } from '@/lib/disputeCreate';
 
 export default function TransactionDetail() {
   const router = useRouter();
@@ -40,20 +42,15 @@ export default function TransactionDetail() {
   const [itemMatchesDescription, setItemMatchesDescription] = useState(true);
   const [evidenceTimeline, setEvidenceTimeline] = useState([]);
   const [disputeError, setDisputeError] = useState(null);
+  const [shippingFiles, setShippingFiles] = useState([]);
+  const [confirmDeliveryFiles, setConfirmDeliveryFiles] = useState([]);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastManualRefreshAt, setLastManualRefreshAt] = useState(null);
 
-  useEffect(() => {
-    if (!id || authLoading) return;
-    if (!authUser) {
-      router.push('/auth/login');
-      setLoading(false);
-      return;
-    }
+  const mpesaPollLastStatus = useRef('');
 
-    setUser(authUser);
-    fetchTransaction(authUser.id);
-  }, [id, router, authUser, authLoading]);
-
-  const fetchTransaction = async (userId) => {
+  /** @returns {Promise<{ ok: boolean, reason?: string }>} */
+  const fetchTransaction = useCallback(async (userId) => {
     try {
       const { data: txn, error } = await supabase
         .from('transactions')
@@ -67,13 +64,12 @@ export default function TransactionDetail() {
 
       if (error) throw error;
 
-      // Check if user is involved in transaction
       if (txn.buyer_id !== userId && txn.seller_id !== userId) {
         setError('Unauthorized');
-        setLoading(false);
-        return;
+        return { ok: false, reason: 'unauthorized' };
       }
 
+      setError(null);
       setTransaction(txn);
 
       const { data: requestData } = await supabase
@@ -94,13 +90,143 @@ export default function TransactionDetail() {
         const evidenceData = await evidenceResponse.json();
         setEvidenceTimeline(evidenceData.evidence || []);
       }
-    } catch (error) {
-      console.error('Error fetching transaction:', error);
+
+      return { ok: true };
+    } catch (err) {
+      console.error('Error fetching transaction:', err);
       setError('Transaction not found');
+      return { ok: false, reason: 'error' };
     } finally {
       setLoading(false);
     }
+  }, [id]);
+
+  const handleRefresh = async () => {
+    if (!user?.id || isRefreshing) return;
+    setIsRefreshing(true);
+    try {
+      const result = await fetchTransaction(user.id);
+      if (result?.ok) {
+        setLastManualRefreshAt(new Date());
+        toast.success('Latest data loaded');
+      } else if (result?.reason === 'unauthorized') {
+        toast.error('You do not have access to this transaction');
+      } else {
+        toast.error('Could not refresh. Try again in a moment.');
+      }
+    } finally {
+      setIsRefreshing(false);
+    }
   };
+
+  useEffect(() => {
+    if (!id || authLoading) return;
+    if (!authUser) {
+      router.push('/auth/login');
+      setLoading(false);
+      return;
+    }
+
+    setUser(authUser);
+    fetchTransaction(authUser.id);
+  }, [id, router, authUser, authLoading, fetchTransaction]);
+
+  useEffect(() => {
+    if (!transaction || typeof window === 'undefined') return;
+    const q = new URLSearchParams(window.location.search);
+    if (
+      q.get('openDispute') === '1' &&
+      ['escrow', 'delivered'].includes(transaction.status) &&
+      transaction.status !== 'disputed'
+    ) {
+      setShowDisputeModal(true);
+    }
+  }, [transaction?.id, transaction?.status]);
+
+  useEffect(() => {
+    if (transaction?.status === 'payment_pending') {
+      mpesaPollLastStatus.current = '';
+    }
+  }, [transaction?.id, transaction?.status]);
+
+  useEffect(() => {
+    if (!id || !user?.id || transaction?.status !== 'payment_pending') return;
+
+    let cancelled = false;
+    let attempts = 0;
+    const maxAttempts = 100;
+
+    const tick = async () => {
+      if (cancelled || attempts++ > maxAttempts) return;
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.access_token) return;
+        const res = await fetch(`/api/transactions/${id}/payment-status`, {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        const j = await res.json();
+        if (cancelled) return;
+
+        const st = j.status || '';
+        if (st === 'confirmed' && mpesaPollLastStatus.current !== 'confirmed') {
+          toast.success(j.message || 'Payment confirmed');
+        }
+        if (
+          ['cancelled', 'timeout', 'failed'].includes(st) &&
+          !['cancelled', 'timeout', 'failed'].includes(mpesaPollLastStatus.current)
+        ) {
+          toast.info(j.message || 'Payment was not completed');
+        }
+        mpesaPollLastStatus.current = st;
+
+        await fetchTransaction(user.id);
+      } catch (e) {
+        console.error('payment-status poll:', e);
+      }
+    };
+
+    tick();
+    const iv = setInterval(tick, 3500);
+    return () => {
+      cancelled = true;
+      clearInterval(iv);
+    };
+  }, [id, user?.id, transaction?.status, fetchTransaction]);
+
+  useEffect(() => {
+    if (!id || transaction?.status !== 'payment_pending' || !user?.id) return;
+
+    const ch = supabase
+      .channel(`txn-pay-${id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'transactions',
+          filter: `id=eq.${id}`,
+        },
+        () => {
+          fetchTransaction(user.id);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(ch);
+    };
+  }, [id, transaction?.status, user?.id, fetchTransaction]);
+
+  /** Soft sync when the user returns to this tab (e.g. after acting on another device). */
+  useEffect(() => {
+    if (!user?.id || !id) return;
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      fetchTransaction(user.id);
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [id, user?.id, fetchTransaction]);
 
   const initiatePayment = async () => {
     setActionLoading(true);
@@ -116,90 +242,113 @@ export default function TransactionDetail() {
       const result = await response.json();
       
       if (result.success) {
-        alert(result.message);
+        toast.success(result.message);
         setShowPaymentModal(false);
+        mpesaPollLastStatus.current = '';
         fetchTransaction(user.id);
       } else {
-        alert(result.error || 'Payment failed');
+        const msg = result.error || 'Payment failed';
+        if (result.code === 'MPESA_CALLBACK_NOT_CONFIGURED') {
+          toast.error(msg, { duration: 12000 });
+        } else {
+          toast.error(msg);
+        }
       }
     } catch (error) {
       console.error('Payment error:', error);
-      alert('Failed to initiate payment');
+      toast.error('Failed to initiate payment');
     } finally {
       setActionLoading(false);
     }
   };
 
   const markAsShipped = async () => {
+    if (!trackingNumber.trim() || !courier.trim()) {
+      toast.error('Tracking number and courier are required.');
+      return;
+    }
+    if (shippingFiles.length < 1) {
+      toast.error('Add at least one photo showing dispatch proof (package, waybill, or handover).');
+      return;
+    }
     setActionLoading(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
+      const formData = new FormData();
+      formData.append('tracking_number', trackingNumber.trim());
+      formData.append('courier', courier.trim());
+      if (shippingNotes.trim()) formData.append('notes', shippingNotes.trim());
+      for (const file of shippingFiles) {
+        formData.append('files', file);
+      }
+
       const response = await fetch(`/api/transactions/${id}/ship`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          tracking_number: trackingNumber || null,
-          courier: courier || null,
-          notes: shippingNotes || null,
-          photos: [],
-          delivery_proof_url: '',
-        }),
+        body: formData,
       });
 
       const result = await response.json();
       
       if (result.success) {
-        alert(result.message);
+        toast.success(result.message);
         setShowShippingModal(false);
         setTrackingNumber('');
         setCourier('');
         setShippingNotes('');
+        setShippingFiles([]);
         fetchTransaction(user.id);
       } else {
-        alert(result.error || 'Failed to mark as shipped');
+        toast.error(result.error || 'Failed to mark as shipped');
       }
     } catch (error) {
       console.error('Shipping error:', error);
-      alert('Failed to mark as shipped');
+      toast.error('Failed to mark as shipped');
     } finally {
       setActionLoading(false);
     }
   };
 
   const confirmDelivery = async () => {
+    if (confirmDeliveryFiles.length < 1) {
+      toast.error('Add at least one photo of the item received (or packaging) before confirming.');
+      return;
+    }
     setActionLoading(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
+      const formData = new FormData();
+      formData.append('confirmation_comment', confirmationComment || '');
+      formData.append('condition_rating', String(conditionRating));
+      formData.append('item_matches_description', itemMatchesDescription ? 'true' : 'false');
+      for (const file of confirmDeliveryFiles) {
+        formData.append('files', file);
+      }
+
       const response = await fetch(`/api/transactions/${id}/confirm-delivery`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          confirmation_comment: confirmationComment,
-          condition_rating: conditionRating,
-          item_matches_description: itemMatchesDescription,
-          photos: [],
-        }),
+        body: formData,
       });
 
       const result = await response.json();
       
       if (result.success) {
-        alert(result.message);
+        toast.success(result.message);
         setShowConfirmModal(false);
         setConfirmationComment('');
+        setConfirmDeliveryFiles([]);
         fetchTransaction(user.id);
       } else {
-        alert(result.error || 'Failed to confirm delivery');
+        toast.error(result.error || 'Failed to confirm delivery');
       }
     } catch (error) {
       console.error('Confirmation error:', error);
-      alert('Failed to confirm delivery');
+      toast.error('Failed to confirm delivery');
     } finally {
       setActionLoading(false);
     }
@@ -207,6 +356,15 @@ export default function TransactionDetail() {
 
   const handleRaiseDispute = async () => {
     setDisputeError(null);
+    if (disputeFiles.length < 1) {
+      setDisputeError('Please attach at least one image as evidence.');
+      return;
+    }
+    const descChk = validateDisputeDescription(disputeDescription);
+    if (!descChk.ok) {
+      setDisputeError(descChk.error);
+      return;
+    }
     setActionLoading(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -238,7 +396,8 @@ export default function TransactionDetail() {
       const result = await response.json();
       
       if (response.ok && result.success) {
-        alert('Dispute raised successfully');
+        setDisputeError(null);
+        toast.success(result.message || 'Dispute created');
         setShowDisputeModal(false);
         setDisputeReason('');
         setDisputeDescription('');
@@ -250,11 +409,14 @@ export default function TransactionDetail() {
         setTimelineNotes('');
         fetchTransaction(user.id);
       } else {
-        setDisputeError(result.error || 'Failed to raise dispute');
+        const err = result.error || 'Failed to raise dispute';
+        setDisputeError(err);
+        toast.error(err);
       }
     } catch (error) {
       console.error('Dispute error:', error);
       setDisputeError('Failed to raise dispute');
+      toast.error('Failed to raise dispute');
     } finally {
       setActionLoading(false);
     }
@@ -286,16 +448,17 @@ export default function TransactionDetail() {
 
       const result = await response.json();
       if (!response.ok || !result.success) {
-        alert(result.error || `Failed to ${actionType}`);
+        toast.error(result.error || `Failed to ${actionType}`);
         return;
       }
 
       setSellerMessage('');
       setProposedAmount('');
+      toast.success('Saved');
       fetchTransaction(user.id);
     } catch (err) {
       console.error(`${actionType} error:`, err);
-      alert('Failed to submit seller decision');
+      toast.error('Failed to submit seller decision');
     } finally {
       setActionLoading(false);
     }
@@ -313,13 +476,38 @@ export default function TransactionDetail() {
       });
       const result = await response.json();
       if (!response.ok || !result.success) {
-        alert(result.error || 'Failed to accept changes');
+        toast.error(result.error || 'Failed to accept changes');
         return;
       }
+      toast.success('Changes accepted');
       fetchTransaction(user.id);
-    } catch (error) {
-      console.error('Accept changes error:', error);
-      alert('Failed to accept seller changes');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const abandonCheckout = async () => {
+    if (!user?.id) return;
+    setActionLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch(`/api/transactions/${id}/abandon-checkout`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        toast.error(result.error || 'Could not clear checkout');
+        return;
+      }
+      toast.success(result.message || 'Checkout cleared');
+      mpesaPollLastStatus.current = '';
+      fetchTransaction(user.id);
+    } catch (e) {
+      console.error('abandon checkout:', e);
+      toast.error('Failed to clear checkout');
     } finally {
       setActionLoading(false);
     }
@@ -368,6 +556,25 @@ export default function TransactionDetail() {
 
   const isBuyer = user && transaction && transaction.buyer_id === user.id;
   const isSeller = user && transaction && transaction.seller_id === user.id;
+  const canRaiseDispute =
+    transaction &&
+    transaction.status !== 'disputed' &&
+    ['escrow', 'delivered'].includes(transaction.status) &&
+    (isBuyer || isSeller);
+  const staleCheckoutForAbandon =
+    transaction?.status === 'payment_pending' &&
+    Boolean(transaction?.updated_at) &&
+    Date.now() - new Date(transaction.updated_at).getTime() > 8 * 60 * 1000;
+  const displayStageLabel =
+    transaction?.status === 'delivered' && isBuyer
+      ? 'Shipped — your confirmation releases funds (photos required)'
+      : transaction?.status === 'delivered' && isSeller
+        ? 'Shipped — waiting for buyer to confirm receipt'
+        : stageLabelMap[transaction?.status] || transaction?.status;
+  const itemDetailLines = (transaction?.description || '')
+    .split(/\r?\n|•|;|\|/)
+    .map((line) => line.trim())
+    .filter(Boolean);
 
   if (loading) {
     return (
@@ -386,14 +593,46 @@ export default function TransactionDetail() {
   return (
     <>
       <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 rounded-2xl shadow-lg p-6 md:p-8 mb-6 text-white">
-        <div className="flex justify-between items-start mb-4">
-          <div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-4">
+          <div className="min-w-0 flex-1">
             <p className="text-xs uppercase tracking-wide text-slate-300">Transaction ID</p>
-            <p className="font-mono text-lg">{transaction.id.slice(0, 8)}...</p>
+            <p className="font-mono text-sm sm:text-lg break-all">{transaction.id.slice(0, 8)}…</p>
+            {lastManualRefreshAt && (
+              <p className="mt-1 text-xs text-slate-400">
+                Last manual refresh: {lastManualRefreshAt.toLocaleString()}
+              </p>
+            )}
           </div>
-          <span className={`px-4 py-2 rounded-full text-sm font-semibold ${getStatusColor(transaction.status)}`}>
-            {transaction.status.toUpperCase()}
-          </span>
+          <div className="flex flex-wrap items-center gap-2 sm:shrink-0 sm:justify-end">
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              title="Reload this transaction, seller request, and evidence without leaving the page"
+              aria-busy={isRefreshing}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-500/80 bg-slate-800/90 px-3.5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-700/90 hover:border-slate-400 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                strokeWidth={1.75}
+                stroke="currentColor"
+                className={`h-4 w-4 shrink-0 ${isRefreshing ? 'animate-spin' : ''}`}
+                aria-hidden
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"
+                />
+              </svg>
+              {isRefreshing ? 'Refreshing…' : 'Refresh'}
+            </button>
+            <span className={`px-4 py-2 rounded-full text-sm font-semibold ${getStatusColor(transaction.status)}`}>
+              {transaction.status.toUpperCase()}
+            </span>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-4 mb-5">
@@ -407,9 +646,22 @@ export default function TransactionDetail() {
           </div>
         </div>
 
-        <div className="mb-5">
-          <p className="text-xs uppercase tracking-wide text-slate-300">Description</p>
-          <p className="text-slate-100">{transaction.description}</p>
+        <div className="mb-5 rounded-xl border border-slate-600/80 bg-slate-800/70 p-4">
+          <p className="text-xs uppercase tracking-wide text-sky-200 mb-2">Item Details</p>
+          {itemDetailLines.length > 1 ? (
+            <ul className="space-y-2 text-slate-100 text-sm md:text-base">
+              {itemDetailLines.map((line, index) => (
+                <li key={`${line}-${index}`} className="flex items-start gap-2">
+                  <span className="mt-1 text-sky-300">•</span>
+                  <span>{line}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-slate-100 text-sm md:text-base">
+              {transaction.description || 'No item description provided yet.'}
+            </p>
+          )}
         </div>
 
         <div className="mb-5">
@@ -420,9 +672,63 @@ export default function TransactionDetail() {
             />
           </div>
           <p className="mt-2 text-sm text-slate-300">
-            Current stage: {stageLabelMap[transaction.status] || transaction.status}
+            Current stage: {displayStageLabel}
           </p>
         </div>
+
+        {isBuyer && transaction.status === 'delivered' && (
+          <div className="mb-5 rounded-2xl border border-emerald-400/55 bg-gradient-to-br from-emerald-950/90 via-slate-900/95 to-slate-950 p-5 shadow-xl ring-1 ring-emerald-500/25">
+            <p className="text-xs font-semibold uppercase tracking-wider text-emerald-300/95">Action needed</p>
+            <h3 className="mt-1 text-xl font-bold text-white sm:text-2xl">Confirm you received the order</h3>
+            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-emerald-50/90">
+              The seller has marked this shipment as sent. Escrow still holds your payment until you confirm with{' '}
+              <span className="font-semibold text-white">photos of what you received</span>, a condition rating, and
+              whether the item matches the listing.
+            </p>
+            {(transaction.tracking_number || transaction.courier) && (
+              <p className="mt-3 text-sm text-emerald-100/85">
+                {transaction.courier && <span className="font-medium text-white">{transaction.courier}</span>}
+                {transaction.courier && transaction.tracking_number && ' · '}
+                {transaction.tracking_number && (
+                  <>
+                    Tracking:{' '}
+                    <span className="font-mono text-emerald-50">{transaction.tracking_number}</span>
+                  </>
+                )}
+              </p>
+            )}
+            <div className="mt-5 flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={() => setShowConfirmModal(true)}
+                className="inline-flex items-center justify-center rounded-xl bg-emerald-500 px-5 py-3 text-sm font-bold text-emerald-950 shadow-md transition hover:bg-emerald-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
+              >
+                Confirm delivery with evidence
+              </button>
+              <button
+                type="button"
+                onClick={() => document.getElementById('transaction-actions')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                className="inline-flex items-center justify-center rounded-xl border border-white/20 bg-white/5 px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/10"
+              >
+                Jump to actions
+              </button>
+            </div>
+            <p className="mt-4 text-xs text-emerald-200/70">
+              Tip: If something is wrong, you can still raise a dispute from the Actions section after reviewing the
+              evidence timeline below.
+            </p>
+          </div>
+        )}
+
+        {isSeller && transaction.status === 'delivered' && (
+          <div className="mb-5 rounded-2xl border border-amber-400/45 bg-amber-950/35 p-4 ring-1 ring-amber-500/15">
+            <p className="text-sm font-semibold text-amber-100">Awaiting buyer confirmation</p>
+            <p className="mt-1 text-sm text-amber-50/85">
+              The buyer needs to confirm receipt with photos before funds move to released. You will be notified when
+              that happens.
+            </p>
+          </div>
+        )}
 
         {/* Parties */}
         <div className="border-t border-slate-700 pt-4">
@@ -570,8 +876,38 @@ export default function TransactionDetail() {
       </div>
 
       {/* Action Buttons */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
-        <h2 className="text-xl font-bold text-gray-900 mb-4">Actions</h2>
+      <div id="transaction-actions" className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+        <h2 className="text-xl font-bold text-gray-900 mb-1">Actions</h2>
+        <p className="text-sm text-slate-500 mb-4">
+          If the other party just acted, use <span className="font-medium text-slate-700">Refresh</span> at the top
+          to sync this transaction without reloading the whole site.
+        </p>
+
+        {transaction.status === 'payment_pending' && (
+          <div className="mb-4 p-4 rounded-xl border border-amber-200 bg-amber-50 text-amber-950 text-sm space-y-2">
+            <p className="font-semibold">M-Pesa checkout in progress</p>
+            <p className="text-amber-900/90">
+              {isBuyer
+                ? 'Enter your PIN on your phone if prompted. This page checks Safaricom in the background and updates when funds hit escrow.'
+                : 'Waiting for the buyer to complete payment on their phone.'}
+            </p>
+            {isBuyer && !staleCheckoutForAbandon && (
+              <p className="text-xs text-amber-800/80">
+                If the prompt failed because the callback URL was offline (for example ngrok not running), wait about 8 minutes after initiating pay, then you can clear the stuck checkout below.
+              </p>
+            )}
+            {isBuyer && staleCheckoutForAbandon && (
+              <button
+                type="button"
+                onClick={abandonCheckout}
+                disabled={actionLoading}
+                className="mt-1 text-sm font-medium text-amber-950 underline decoration-amber-700 hover:text-amber-900 disabled:opacity-50"
+              >
+                Clear stuck checkout and try paying again
+              </button>
+            )}
+          </div>
+        )}
         
         {isBuyer && (transaction.status === 'seller_approved' || transaction.status === 'initiated') && (
           <button
@@ -652,6 +988,23 @@ export default function TransactionDetail() {
           </div>
         )}
 
+        {isBuyer && transaction.status === 'delivered' && (
+          <div className="mb-4 rounded-2xl border-2 border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-slate-50 p-5 shadow-sm ring-1 ring-emerald-100/80">
+            <h3 className="text-lg font-bold text-emerald-950">Confirm receipt</h3>
+            <p className="mt-1 text-sm text-emerald-900/80">
+              Opens a short form: condition rating, description match, optional note, and at least one delivery photo
+              (required before funds release).
+            </p>
+            <button
+              type="button"
+              onClick={() => setShowConfirmModal(true)}
+              className="mt-4 w-full rounded-xl bg-emerald-600 px-4 py-3 text-center text-sm font-bold text-white shadow-sm transition hover:bg-emerald-700"
+            >
+              Open confirmation form
+            </button>
+          </div>
+        )}
+
         {isSeller && transaction.status === 'escrow' && (
           <button
             onClick={() => setShowShippingModal(true)}
@@ -661,25 +1014,13 @@ export default function TransactionDetail() {
           </button>
         )}
 
-        {isBuyer && transaction.status === 'delivered' && (
-          <button
-            onClick={() => setShowConfirmModal(true)}
-            className="w-full bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 transition font-medium mb-2"
-          >
-            Confirm Delivery
-          </button>
+        {isBuyer && transaction.status === 'delivered' && canRaiseDispute && (
+          <div className="my-3 border-t border-slate-200 pt-3">
+            <p className="text-center text-xs text-slate-500">or if there is a serious problem</p>
+          </div>
         )}
 
-        {isBuyer && transaction.status === 'escrow' && (
-          <button
-            onClick={() => setShowDisputeModal(true)}
-            className="w-full bg-red-600 text-white px-6 py-3 rounded-lg hover:bg-red-700 transition font-medium mb-2"
-          >
-            Raise Dispute
-          </button>
-        )}
-
-        {isSeller && transaction.status === 'escrow' && (
+        {canRaiseDispute && (
           <button
             onClick={() => setShowDisputeModal(true)}
             className="w-full bg-red-600 text-white px-6 py-3 rounded-lg hover:bg-red-700 transition font-medium mb-2"
@@ -763,16 +1104,47 @@ export default function TransactionDetail() {
                 placeholder="Packaging and dispatch details"
               />
             </div>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Dispatch photos * (1–5, JPEG/PNG/WebP, max 5MB each)
+              </label>
+              <p className="text-xs text-slate-600 mb-2">
+                Required together with tracking: e.g. packaged item, courier slip, or label on the parcel.
+              </p>
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                multiple
+                onChange={(e) => {
+                  const files = e.target.files ? Array.from(e.target.files) : [];
+                  setShippingFiles(files.slice(0, 5));
+                }}
+                className="w-full"
+              />
+              {shippingFiles.length > 0 && (
+                <p className="text-xs text-gray-500 mt-2">
+                  Selected: {shippingFiles.length} file{shippingFiles.length === 1 ? '' : 's'}
+                </p>
+              )}
+            </div>
             <div className="flex gap-2">
               <button
                 onClick={markAsShipped}
-                disabled={actionLoading || !trackingNumber.trim() || !courier.trim()}
+                disabled={
+                  actionLoading ||
+                  !trackingNumber.trim() ||
+                  !courier.trim() ||
+                  shippingFiles.length < 1
+                }
                 className="flex-1 bg-green-600 text-white px-4 py-2.5 rounded-xl hover:bg-green-700 transition font-semibold"
               >
                 {actionLoading ? 'Processing...' : 'Confirm Shipment'}
               </button>
               <button
-                onClick={() => setShowShippingModal(false)}
+                onClick={() => {
+                  setShowShippingModal(false);
+                  setShippingFiles([]);
+                }}
                 className="flex-1 bg-slate-200 text-slate-700 px-4 py-2.5 rounded-xl hover:bg-slate-300 transition font-semibold"
               >
                 Cancel
@@ -785,7 +1157,7 @@ export default function TransactionDetail() {
       {/* Delivery Confirmation Modal */}
       {showConfirmModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl p-6 max-w-md w-full">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
             <h3 className="text-xl font-bold text-slate-900 mb-2">Confirm Delivery</h3>
             <p className="text-slate-600 mb-4">
               Confirming delivery will release the funds to the seller. This action cannot be undone.
@@ -829,16 +1201,42 @@ export default function TransactionDetail() {
                 placeholder="Add any comments about the delivery"
               />
             </div>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Delivery photos * (1–5, JPEG/PNG/WebP, max 5MB each)
+              </label>
+              <p className="text-xs text-slate-600 mb-2">
+                Upload clear photos of what you received before funds are released to the seller.
+              </p>
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                multiple
+                onChange={(e) => {
+                  const files = e.target.files ? Array.from(e.target.files) : [];
+                  setConfirmDeliveryFiles(files.slice(0, 5));
+                }}
+                className="w-full"
+              />
+              {confirmDeliveryFiles.length > 0 && (
+                <p className="text-xs text-gray-500 mt-2">
+                  Selected: {confirmDeliveryFiles.length} file{confirmDeliveryFiles.length === 1 ? '' : 's'}
+                </p>
+              )}
+            </div>
             <div className="flex gap-2">
               <button
                 onClick={confirmDelivery}
-                disabled={actionLoading}
+                disabled={actionLoading || confirmDeliveryFiles.length < 1}
                 className="flex-1 bg-green-600 text-white px-4 py-2.5 rounded-xl hover:bg-green-700 transition font-semibold"
               >
                 {actionLoading ? 'Processing...' : 'Confirm Delivery'}
               </button>
               <button
-                onClick={() => setShowConfirmModal(false)}
+                onClick={() => {
+                  setShowConfirmModal(false);
+                  setConfirmDeliveryFiles([]);
+                }}
                 className="flex-1 bg-slate-200 text-slate-700 px-4 py-2.5 rounded-xl hover:bg-slate-300 transition font-semibold"
               >
                 Cancel
@@ -849,13 +1247,37 @@ export default function TransactionDetail() {
       )}
 
       {/* Dispute Modal */}
-      {showDisputeModal && (
+      {showDisputeModal && transaction && (
         <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl p-6 max-w-md w-full">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto">
             <h3 className="text-xl font-bold text-slate-900 mb-2">Raise Dispute</h3>
-            <p className="text-slate-600 mb-4">
-              Please provide details about the issue. Our admin team will review your dispute.
+            <p className="text-slate-600 mb-4 text-sm">
+              Provide a clear description and images. Admins will review this together with the evidence already on this transaction.
             </p>
+            <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-800">
+              <p className="font-semibold text-slate-900">Transaction summary</p>
+              <p className="mt-1">
+                <span className="text-slate-600">Amount:</span> KES {Number(transaction.amount).toLocaleString()}
+              </p>
+              <p>
+                <span className="text-slate-600">Status:</span> {transaction.status}
+              </p>
+              <p>
+                <span className="text-slate-600">Counterparty:</span>{' '}
+                {isBuyer
+                  ? transaction.seller?.full_name || transaction.seller?.email || 'Seller'
+                  : transaction.buyer?.full_name || transaction.buyer?.email || 'Buyer'}
+              </p>
+              {transaction.tracking_number && (
+                <p>
+                  <span className="text-slate-600">Tracking:</span> {transaction.tracking_number}{' '}
+                  {transaction.courier ? `(${transaction.courier})` : ''}
+                </p>
+              )}
+              <p className="mt-2 text-slate-600">
+                Evidence entries on file: {evidenceTimeline.length}. Your new images will be added to the case file.
+              </p>
+            </div>
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Reason *
@@ -874,22 +1296,33 @@ export default function TransactionDetail() {
               </select>
             </div>
             <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Description *
-              </label>
+              <div className="flex justify-between items-baseline mb-2">
+                <label className="block text-sm font-medium text-gray-700">
+                  Description * (min {MIN_DESCRIPTION_LEN} characters)
+                </label>
+                <span
+                  className={`text-xs font-medium ${
+                    disputeDescription.trim().length >= MIN_DESCRIPTION_LEN
+                      ? 'text-emerald-600'
+                      : 'text-amber-600'
+                  }`}
+                >
+                  {disputeDescription.trim().length}/{MIN_DESCRIPTION_LEN}
+                </span>
+              </div>
               <textarea
                 required
                 value={disputeDescription}
                 onChange={(e) => setDisputeDescription(e.target.value)}
-                rows="4"
+                rows="5"
                 className="w-full px-3 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Describe the issue in detail..."
+                placeholder="Explain what happened, dates, and what resolution you expect. Admins read this together with your photos."
               />
             </div>
 
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Initial Evidence (optional, up to 3 images)
+                Evidence images * (1–3, JPEG/PNG/WebP, max 5MB each)
               </label>
               <input
                 type="file"
@@ -974,7 +1407,12 @@ export default function TransactionDetail() {
             <div className="flex gap-2">
               <button
                 onClick={handleRaiseDispute}
-                disabled={actionLoading || !disputeReason || !disputeDescription}
+                disabled={
+                  actionLoading ||
+                  !disputeReason ||
+                  disputeDescription.trim().length < MIN_DESCRIPTION_LEN ||
+                  disputeFiles.length < 1
+                }
                 className="flex-1 bg-red-600 text-white px-4 py-2.5 rounded-xl hover:bg-red-700 transition font-semibold disabled:opacity-50"
               >
                 {actionLoading ? 'Submitting...' : 'Submit Dispute'}
@@ -990,6 +1428,7 @@ export default function TransactionDetail() {
                   setCheckConditionMismatch(false);
                   setCheckTimelineDiscrepancy(false);
                   setTimelineNotes('');
+                  setDisputeError(null);
                 }}
                 className="flex-1 bg-slate-200 text-slate-700 px-4 py-2.5 rounded-xl hover:bg-slate-300 transition font-semibold"
               >

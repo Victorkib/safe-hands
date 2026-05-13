@@ -83,6 +83,18 @@ export default function DisputesPage() {
         <p className="text-rose-100 mt-2">Track active cases, review status changes, and keep resolution progress transparent.</p>
       </div>
 
+      <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+        <p className="font-semibold">Evidence rules (recent updates)</p>
+        <ul className="mt-2 list-disc list-inside space-y-1 text-amber-900/90">
+          <li>New disputes require distinct photos (duplicates rejected), a narrative of at least 40 characters, and only open in escrow or delivered.</li>
+          <li>Thin filings (one photo and under 120 characters) go to the admin <strong>triage</strong> queue; stronger cases use the standard queue.</li>
+          <li>Sellers must attach dispatch photos with tracking when marking shipped; buyers must attach photos when confirming delivery.</li>
+        </ul>
+        <p className="mt-2 text-amber-900/80">
+          Use <strong>View Details</strong> on a transaction, or <strong>Raise dispute</strong> from your buyer/seller dashboard when the status allows it.
+        </p>
+      </div>
+
       <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
         <div className="p-6 border-b border-gray-200">
           <div className="flex flex-wrap gap-3">
@@ -152,12 +164,22 @@ export default function DisputesPage() {
                       {new Date(dispute.created_at).toLocaleDateString()}
                     </td>
                     <td className="px-6 py-4 text-sm">
-                      <Link
-                        href={`/dashboard/disputes/${dispute.id}`}
-                        className="text-blue-600 hover:text-blue-700 font-semibold transition"
-                      >
-                        View
-                      </Link>
+                      <div className="flex flex-col gap-1">
+                        <Link
+                          href={`/dashboard/disputes/${dispute.id}`}
+                          className="text-blue-600 hover:text-blue-700 font-semibold transition"
+                        >
+                          Case
+                        </Link>
+                        {dispute.transaction?.id && (
+                          <Link
+                            href={`/dashboard/transactions/${dispute.transaction.id}`}
+                            className="text-slate-600 hover:text-slate-900 font-semibold transition text-xs"
+                          >
+                            Transaction
+                          </Link>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}

@@ -5,6 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/context/AuthContext';
+import { toast } from 'sonner';
 
 export default function DisputeDetail() {
   const router = useRouter();
@@ -89,16 +90,16 @@ export default function DisputeDetail() {
 
       const result = await response.json();
       if (result.success) {
-        alert('Evidence uploaded successfully');
+        toast.success('Evidence uploaded successfully');
         setShowEvidenceModal(false);
         setSelectedFiles([]);
         fetchDispute(user.id);
       } else {
-        alert(result.error || 'Failed to upload evidence');
+        toast.error(result.error || 'Failed to upload evidence');
       }
     } catch (error) {
       console.error('Upload error:', error);
-      alert('Failed to upload evidence');
+      toast.error('Failed to upload evidence');
     } finally {
       setUploading(false);
     }
@@ -123,17 +124,17 @@ export default function DisputeDetail() {
       const result = await response.json();
       
       if (result.success) {
-        alert('Dispute resolved successfully');
+        toast.success('Dispute resolved successfully');
         setShowResolveModal(false);
         setResolution('');
         setAdminNotes('');
         fetchDispute(user.id);
       } else {
-        alert(result.error || 'Failed to resolve dispute');
+        toast.error(result.error || 'Failed to resolve dispute');
       }
     } catch (error) {
       console.error('Resolution error:', error);
-      alert('Failed to resolve dispute');
+      toast.error('Failed to resolve dispute');
     } finally {
       setUploading(false);
     }
@@ -341,7 +342,7 @@ export default function DisputeDetail() {
           <div className="bg-white rounded-2xl border border-slate-200 shadow-xl p-6 max-w-md w-full">
             <h3 className="text-xl font-bold mb-4">Upload Evidence</h3>
             <p className="text-sm text-gray-600 mb-4">
-              Max 3 files, max 1MB each. JPEG, PNG, or WebP only.
+              Max 3 files, max 5MB each. JPEG, PNG, or WebP only.
             </p>
             <form onSubmit={handleEvidenceUpload}>
               <input

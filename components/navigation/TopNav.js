@@ -43,13 +43,13 @@ export default function TopNav() {
   // Public nav items
   const publicNavItems = [
     { name: 'Home', href: '/' },
-    { name: 'Marketplace', href: '/marketplace' },
+    { name: 'Marketplace', href: '/dashboard/marketplace' },
   ];
 
   // Authenticated nav items
   const authenticatedNavItems = [
     { name: 'Dashboard', href: getDashboardLink() },
-    { name: 'Marketplace', href: '/marketplace' },
+    { name: 'Marketplace', href: '/dashboard/marketplace' },
   ];
 
   const navItems = user ? authenticatedNavItems : publicNavItems;
@@ -70,9 +70,9 @@ export default function TopNav() {
 
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center gap-8">
-            {navItems.map((item) => (
+            {navItems.map((item, index) => (
               <Link
-                key={item.href}
+                key={`${item.name}-${item.href}-${index}`}
                 href={item.href}
                 className={`transition-colors ${
                   pathname === item.href
@@ -140,9 +140,9 @@ export default function TopNav() {
         {/* Mobile Menu */}
         {showMobileMenu && (
           <div className="md:hidden border-t border-gray-200 py-4 space-y-3">
-            {navItems.map((item) => (
+            {navItems.map((item, index) => (
               <Link
-                key={item.href}
+                key={`${item.name}-${item.href}-${index}`}
                 href={item.href}
                 className={`block px-4 py-2 rounded-lg transition-colors ${
                   pathname === item.href

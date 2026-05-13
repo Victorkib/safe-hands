@@ -10,13 +10,19 @@ const path = require('path');
 const { createClient } = require('@supabase/supabase-js');
 
 // Load environment variables
-require('dotenv').config({ path: path.join(__dirname, '../.env.local') });
+// Prefer `.env.local` if present (common in some deployments), otherwise fall back to `.env`.
+const envLocalPath = path.join(__dirname, '../.env.local');
+const envPath = path.join(__dirname, '../.env');
+const dotenvPath = fs.existsSync(envLocalPath) ? envLocalPath : envPath;
+require('dotenv').config({ path: dotenvPath });
 
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-  console.error('❌ Error: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set in .env.local');
+  console.error(
+    '❌ Error: SUPABASE_URL/NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set in `.env` (or `.env.local`).'
+  );
   process.exit(1);
 }
 
@@ -30,16 +36,18 @@ async function runMigration(filePath) {
     // Read SQL file
     const sql = fs.readFileSync(filePath, 'utf8');
     
-    // Execute SQL
-    const { error } = await supabase.rpc('exec', { sql_query: sql }).catch(async () => {
-      // Fallback: Use direct SQL execution via query
-      // Note: This may require additional setup, but we'll use the standard approach
-      console.log('⚠️  Note: Direct RPC not available, attempting alternate method...');
-      return { error: null };
-    });
+    // Execute SQL via RPC function `exec(sql_query text)`.
+    // If this RPC does not exist, migration must fail loudly (no false positives).
+    const { error } = await supabase.rpc('exec', { sql_query: sql });
 
     if (error) {
       console.error(`❌ Migration failed: ${error.message}`);
+      if (String(error.message || '').includes('Could not find the function public.exec')) {
+        console.error(
+          '💡 Hint: This project requires a SQL execution RPC for automated migrations.\n' +
+          '   Run the migration manually in Supabase SQL Editor, or add an exec(sql_query text) function.'
+        );
+      }
       return false;
     }
 

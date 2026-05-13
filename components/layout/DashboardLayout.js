@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { Toaster } from 'sonner';
 import TopNav from '@/components/navigation/TopNav';
 import Sidebar from '@/components/navigation/Sidebar';
 import { useAuth } from '@/context/AuthContext';
@@ -33,6 +34,7 @@ export default function DashboardLayout({ children }) {
 
   return (
     <div className="flex flex-col min-h-screen bg-white">
+      <Toaster richColors position="top-center" closeButton />
       <TopNav />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar />

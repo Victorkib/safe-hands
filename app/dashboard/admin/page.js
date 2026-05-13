@@ -395,7 +395,7 @@ export default function AdminDashboard() {
                   <td className="px-6 py-4 text-sm">{new Date(l.created_at).toLocaleDateString()}</td>
                   <td className="px-6 py-4 text-sm">
                     <Link
-                      href={`/listings/${l.id}`}
+                      href={`/dashboard/marketplace/${l.id}`}
                       target="_blank"
                       className="text-blue-600 hover:text-blue-700"
                     >

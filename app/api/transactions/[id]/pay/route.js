@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { mpesaClient } from '@/lib/mpesaClient';
 import { getAuthenticatedUser, unauthorizedResponse } from '@/lib/apiAuth';
+import { assertMpesaCallbackConfigured } from '@/lib/mpesaPayment';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -16,6 +17,14 @@ export async function POST(request, { params }) {
     const { id } = await params;
     const { user } = await getAuthenticatedUser(request);
     if (!user) return unauthorizedResponse();
+
+    const callbackCheck = assertMpesaCallbackConfigured();
+    if (!callbackCheck.ok) {
+      return Response.json(
+        { error: callbackCheck.message, code: 'MPESA_CALLBACK_NOT_CONFIGURED' },
+        { status: 503 }
+      );
+    }
 
     // Get user's phone number
     const { data: userData, error: userError } = await supabase
@@ -61,6 +70,17 @@ export async function POST(request, { params }) {
     }
 
     // Check transaction status
+    if (transaction.status === 'payment_pending' && transaction.mpesa_ref) {
+      return Response.json(
+        {
+          error:
+            'A payment prompt is already in progress. Wait for confirmation on this page, or try again after it clears.',
+          code: 'CHECKOUT_IN_PROGRESS',
+        },
+        { status: 409 }
+      );
+    }
+
     if (transaction.status !== 'initiated' && transaction.status !== 'seller_approved') {
       return Response.json(
         { error: `Cannot pay for transaction with status: ${transaction.status}` },
@@ -68,10 +88,9 @@ export async function POST(request, { params }) {
       );
     }
 
-    // Check if payment already initiated
     if (transaction.mpesa_ref) {
       return Response.json(
-        { error: 'Payment already initiated' },
+        { error: 'Payment reference still set; refresh and try again or contact support.' },
         { status: 400 }
       );
     }
@@ -122,14 +141,15 @@ export async function POST(request, { params }) {
       reason: 'M-Pesa STK Push initiated',
     });
 
-    // Notify seller
-    await supabase.from('notifications').insert({
-      user_id: transaction.seller_id,
-      title: 'Payment Initiated',
-      message: `Buyer has initiated payment for KES ${transaction.amount.toLocaleString()}`,
-      type: 'payment_initiated',
-      related_transaction_id: id,
-    });
+    if (transaction.seller_id) {
+      await supabase.from('notifications').insert({
+        user_id: transaction.seller_id,
+        title: 'Payment Initiated',
+        message: `Buyer has initiated payment for KES ${transaction.amount.toLocaleString()}`,
+        type: 'payment_initiated',
+        related_transaction_id: id,
+      });
+    }
 
     return Response.json({
       success: true,

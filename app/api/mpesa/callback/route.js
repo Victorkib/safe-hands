@@ -1,29 +1,72 @@
 import { createClient } from '@supabase/supabase-js';
+import {
+  getResumeStatusBeforePaymentPending,
+  normalizeMpesaCode,
+  parseCallbackMetadataItems,
+} from '@/lib/mpesaPayment';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
+/** Safaricom / proxies may probe with GET; return 200 so tunnels stay healthy. */
+export async function GET() {
+  return Response.json({
+    ok: true,
+    service: 'safe-hands-mpesa-stk-callback',
+    methods: ['POST'],
+  });
+}
+
+export async function OPTIONS() {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      Allow: 'GET, POST, OPTIONS',
+    },
+  });
+}
+
 /**
  * POST /api/mpesa/callback
- * Handle M-Pesa STK Push callbacks
- * This endpoint is called by M-Pesa when a payment is completed
+ * M-Pesa STK Push callback (server-to-server).
  */
 export async function POST(request) {
   try {
-    const body = await request.json();
-    
-    // M-Pesa callback structure
-    const { Body } = body;
-    const { stkCallback } = Body;
-    const { 
-      MerchantRequestID, 
-      CheckoutRequestID, 
-      ResultCode, 
-      ResultDesc, 
-      CallbackMetadata 
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return Response.json(
+        { ResultCode: 1, ResultDesc: 'Invalid JSON body' },
+        { status: 400 }
+      );
+    }
+
+    const stkCallback = body?.Body?.stkCallback;
+    if (!stkCallback || typeof stkCallback !== 'object') {
+      console.warn('M-Pesa callback: missing Body.stkCallback');
+      return Response.json(
+        { ResultCode: 1, ResultDesc: 'Invalid callback payload' },
+        { status: 400 }
+      );
+    }
+
+    const {
+      MerchantRequestID,
+      CheckoutRequestID,
+      ResultCode,
+      ResultDesc,
+      CallbackMetadata,
     } = stkCallback;
+
+    if (!CheckoutRequestID) {
+      return Response.json(
+        { ResultCode: 1, ResultDesc: 'Missing CheckoutRequestID' },
+        { status: 400 }
+      );
+    }
 
     console.log('M-Pesa Callback received:', {
       MerchantRequestID,
@@ -32,22 +75,20 @@ export async function POST(request) {
       ResultDesc,
     });
 
-    // Find transaction by checkout request ID
     const { data: transaction, error: transactionError } = await supabase
       .from('transactions')
       .select('*')
       .eq('mpesa_ref', CheckoutRequestID)
-      .single();
+      .maybeSingle();
 
     if (transactionError || !transaction) {
       console.error('Transaction not found for checkout ID:', CheckoutRequestID);
       return Response.json({
-        ResultCode: 1,
-        ResultDesc: 'Transaction not found',
+        ResultCode: 0,
+        ResultDesc: 'No matching transaction (already cleared or unknown checkout)',
       });
     }
 
-    // Check if transaction is already processed
     if (transaction.payment_confirmed_at) {
       console.log('Transaction already processed:', transaction.id);
       return Response.json({
@@ -56,21 +97,18 @@ export async function POST(request) {
       });
     }
 
-    // Process payment result
-    if (ResultCode === 0) {
-      // Payment successful
-      const amount = CallbackMetadata.Item.find(item => item.Name === 'Amount')?.Value;
-      const mpesaReceipt = CallbackMetadata.Item.find(item => item.Name === 'MpesaReceiptNumber')?.Value;
-      const phoneNumber = CallbackMetadata.Item.find(item => item.Name === 'PhoneNumber')?.Value;
+    const rc = normalizeMpesaCode(ResultCode);
 
-      // Update transaction idempotently: only first successful callback should mutate state.
+    if (rc === '0') {
+      const { amount, mpesaReceipt, phoneNumber } = parseCallbackMetadataItems(CallbackMetadata);
+
       const { data: updatedRows, error: updateError } = await supabase
         .from('transactions')
         .update({
           status: 'escrow',
           payment_confirmed_at: new Date().toISOString(),
           mpesa_receipt_number: mpesaReceipt || null,
-          mpesa_phone: phoneNumber,
+          ...(phoneNumber ? { mpesa_phone: phoneNumber } : {}),
         })
         .eq('id', transaction.id)
         .is('payment_confirmed_at', null)
@@ -84,7 +122,6 @@ export async function POST(request) {
         });
       }
 
-      // Another callback likely completed the transition first.
       if (!updatedRows || updatedRows.length === 0) {
         return Response.json({
           ResultCode: 0,
@@ -92,32 +129,31 @@ export async function POST(request) {
         });
       }
 
-      // Log to transaction history
       await supabase.from('transaction_history').insert({
         transaction_id: transaction.id,
         old_status: transaction.status,
         new_status: 'escrow',
-        changed_by: null, // System action
-        reason: `Payment confirmed via M-Pesa. Receipt: ${mpesaReceipt}`,
+        changed_by: null,
+        reason: `Payment confirmed via M-Pesa callback. Receipt: ${mpesaReceipt || 'n/a'}`,
       });
 
-      // Notify buyer
       await supabase.from('notifications').insert({
         user_id: transaction.buyer_id,
         title: 'Payment Successful',
-        message: `Your payment of KES ${amount} has been received and is now in escrow`,
+        message: `Your payment${amount ? ` of KES ${amount}` : ''} has been received and is now in escrow`,
         type: 'payment_received',
         related_transaction_id: transaction.id,
       });
 
-      // Notify seller
-      await supabase.from('notifications').insert({
-        user_id: transaction.seller_id,
-        title: 'Payment Received',
-        message: `Payment of KES ${amount} has been received. You can now ship the item.`,
-        type: 'payment_received',
-        related_transaction_id: transaction.id,
-      });
+      if (transaction.seller_id) {
+        await supabase.from('notifications').insert({
+          user_id: transaction.seller_id,
+          title: 'Payment Received',
+          message: `Payment${amount ? ` of KES ${amount}` : ''} has been received. You can now ship the item.`,
+          type: 'payment_received',
+          related_transaction_id: transaction.id,
+        });
+      }
 
       console.log('Payment processed successfully for transaction:', transaction.id);
 
@@ -125,51 +161,57 @@ export async function POST(request) {
         ResultCode: 0,
         ResultDesc: 'Payment processed successfully',
       });
+    }
 
-    } else {
-      // Payment failed
-      const { error: updateError } = await supabase
-        .from('transactions')
-        .update({
-          status: 'initiated',
-        })
-        .eq('id', transaction.id);
+    const resume = await getResumeStatusBeforePaymentPending(supabase, transaction.id);
 
-      if (updateError) {
-        console.error('Failed to update transaction:', updateError);
-      }
+    const { data: rolled, error: rollError } = await supabase
+      .from('transactions')
+      .update({
+        status: resume,
+        mpesa_ref: null,
+        mpesa_phone: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', transaction.id)
+      .eq('status', 'payment_pending')
+      .is('payment_confirmed_at', null)
+      .select('id');
 
-      // Log to transaction history
+    if (rollError) {
+      console.error('Failed to roll back failed STK:', rollError);
+    } else if (rolled?.length) {
       await supabase.from('transaction_history').insert({
         transaction_id: transaction.id,
-        old_status: transaction.status,
-        new_status: 'initiated',
+        old_status: 'payment_pending',
+        new_status: resume,
         changed_by: null,
-        reason: `Payment failed: ${ResultDesc}`,
+        reason: `M-Pesa STK failed (callback). ResultDesc: ${ResultDesc || rc}`,
       });
 
-      // Notify buyer
       await supabase.from('notifications').insert({
         user_id: transaction.buyer_id,
         title: 'Payment Failed',
-        message: `Your payment failed: ${ResultDesc}. Please try again.`,
+        message: `Your payment did not complete: ${ResultDesc || `code ${rc}`}. You can try again.`,
         type: 'payment_failed',
         related_transaction_id: transaction.id,
       });
-
-      console.log('Payment failed for transaction:', transaction.id, 'Reason:', ResultDesc);
-
-      return Response.json({
-        ResultCode: 1,
-        ResultDesc: 'Payment failed',
-      });
     }
 
+    console.log('Payment failed for transaction:', transaction.id, 'Reason:', ResultDesc);
+
+    return Response.json({
+      ResultCode: 0,
+      ResultDesc: 'Callback handled',
+    });
   } catch (error) {
     console.error('M-Pesa callback error:', error);
-    return Response.json({
-      ResultCode: 1,
-      ResultDesc: 'Internal server error',
-    });
+    return Response.json(
+      {
+        ResultCode: 1,
+        ResultDesc: 'Internal server error',
+      },
+      { status: 500 }
+    );
   }
 }

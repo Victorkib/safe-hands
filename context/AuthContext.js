@@ -88,6 +88,11 @@ export function AuthProvider({ children }) {
         );
 
         if (userError) {
+          // No active session is expected for logged-out visitors.
+          if (userError?.name === 'AuthSessionMissingError') {
+            await applyUserState(null);
+            return;
+          }
           console.error('[v0] Auth error:', userError);
           setError(userError);
           if (isMounted) {

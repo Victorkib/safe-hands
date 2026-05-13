@@ -41,7 +41,7 @@ export default function Navbar() {
             <Link href="/" className="hover:text-blue-100 transition">
               Home
             </Link>
-            <Link href="/marketplace" className="hover:text-blue-100 transition">
+            <Link href="/dashboard/marketplace" className="hover:text-blue-100 transition">
               Marketplace
             </Link>
             {!user && (
@@ -95,7 +95,7 @@ export default function Navbar() {
         {user && showMenu && (
           <div className="md:hidden bg-blue-700 border-t border-blue-500 py-3 px-4">
             <Link
-              href="/marketplace"
+              href="/dashboard/marketplace"
               className="block text-white hover:text-blue-100 py-2 transition"
             >
               Marketplace
@@ -125,7 +125,7 @@ export default function Navbar() {
         {user && showMenu && (
           <div className="hidden md:block absolute right-8 mt-2 bg-white text-gray-800 rounded-lg shadow-xl py-2 min-w-48 z-50">
             <Link
-              href="/marketplace"
+              href="/dashboard/marketplace"
               className="block px-4 py-2 hover:bg-gray-100 transition"
             >
               Marketplace
