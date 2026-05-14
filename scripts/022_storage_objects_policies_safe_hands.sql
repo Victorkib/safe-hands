@@ -1,96 +1,75 @@
--- Row Level Security on storage.objects for Safe Hands buckets.
--- Run in Supabase SQL Editor after 021_ensure_all_app_storage_buckets.sql (buckets must exist).
+-- =============================================================================
+-- 022 — Storage policies for listing-images & dispute-evidence (REFERENCE)
+-- =============================================================================
 --
--- Your API routes use SUPABASE_SERVICE_ROLE_KEY for uploads/deletes, which bypasses RLS.
--- These policies still matter for: future client-side uploads, tooling that uses the anon key,
--- and defense-in-depth if the Storage API is called with a user JWT.
+-- WHY YOU MAY SEE: ERROR 42501: must be owner of table objects
+--   On Supabase Cloud, storage.objects is owned by the storage subsystem
+--   (e.g. supabase_storage_admin), NOT the role used in the SQL Editor. That role
+--   cannot ALTER storage.objects or CREATE/DROP POLICY on it — so any script that
+--   does so will fail with "must be owner of table objects".
 --
--- Public bucket URLs used in <img src="…"> are usually served without evaluating these SELECT
--- policies; SELECT here mainly scopes list/download when using the JS client with a user session.
+-- RLS on storage.objects is already ON by default; do NOT run ALTER on it from here.
 --
--- Path conventions (must match app code):
---   listing-images:    "{userId}/{filename}"           → app/api/listings*
---   dispute-evidence:  "{a}/{b}/{userId}/{filename}"   → lib/evidenceUpload.js (e.g. delivery/ship/…)
+-- DO YOU NEED THIS AT ALL?
+--   Your listing/evidence APIs use SUPABASE_SERVICE_ROLE_KEY, which bypasses
+--   storage.objects RLS. Buckets from 021 are enough for the app to work.
+--   Add policies only if you want client-side (anon / user JWT) Storage access.
+--
+-- ---------------------------------------------------------------------------
+-- OPTION A — Supabase Dashboard (recommended on hosted projects)
+-- ---------------------------------------------------------------------------
+--   1) Dashboard → Storage → Policies (or open each bucket → Policies).
+--   2) Create policies on bucket "listing-images" and "dispute-evidence" using the
+--      names and expressions below (Dashboard often has "Use SQL" / custom policy).
+--
+-- listing-images — policy names & definitions:
+--
+--   safe_hands_listing_images_select
+--     Operation: SELECT   Roles: default (all) or public
+--     USING:  (bucket_id = 'listing-images')
+--
+--   safe_hands_listing_images_insert
+--     Operation: INSERT   Roles: authenticated
+--     WITH CHECK: (bucket_id = 'listing-images' AND split_part(name, '/', 1) = auth.uid()::text)
+--
+--   safe_hands_listing_images_update
+--     Operation: UPDATE   Roles: authenticated
+--     USING:  (bucket_id = 'listing-images' AND split_part(name, '/', 1) = auth.uid()::text)
+--     WITH CHECK: (bucket_id = 'listing-images' AND split_part(name, '/', 1) = auth.uid()::text)
+--
+--   safe_hands_listing_images_delete
+--     Operation: DELETE   Roles: authenticated
+--     USING:  (bucket_id = 'listing-images' AND split_part(name, '/', 1) = auth.uid()::text)
+--
+-- dispute-evidence — third path segment = uploader user id (see lib/evidenceUpload.js):
+--
+--   safe_hands_dispute_evidence_select
+--     Operation: SELECT   Roles: authenticated
+--     USING:  (bucket_id = 'dispute-evidence' AND split_part(name, '/', 3) = auth.uid()::text)
+--
+--   safe_hands_dispute_evidence_insert
+--     Operation: INSERT   Roles: authenticated
+--     WITH CHECK: (bucket_id = 'dispute-evidence' AND split_part(name, '/', 3) = auth.uid()::text)
+--
+--   safe_hands_dispute_evidence_update
+--     Operation: UPDATE   Roles: authenticated
+--     USING:  (bucket_id = 'dispute-evidence' AND split_part(name, '/', 3) = auth.uid()::text)
+--     WITH CHECK: (bucket_id = 'dispute-evidence' AND split_part(name, '/', 3) = auth.uid()::text)
+--
+--   safe_hands_dispute_evidence_delete
+--     Operation: DELETE   Roles: authenticated
+--     USING:  (bucket_id = 'dispute-evidence' AND split_part(name, '/', 3) = auth.uid()::text)
+--
+-- Docs: https://supabase.com/docs/guides/storage/security/access-control
+--
+-- ---------------------------------------------------------------------------
+-- OPTION B — SQL file for local / Docker Supabase only
+-- ---------------------------------------------------------------------------
+--   If postgres owns storage.objects (typical local stack), run instead:
+--   scripts/022b_storage_objects_policies_executable_local.sql
+--
+-- =============================================================================
 
-ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
-
--- ========== listing-images ==========
-
-DROP POLICY IF EXISTS "safe_hands_listing_images_select" ON storage.objects;
-CREATE POLICY "safe_hands_listing_images_select"
-ON storage.objects FOR SELECT
-USING (bucket_id = 'listing-images');
-
-DROP POLICY IF EXISTS "safe_hands_listing_images_insert" ON storage.objects;
-CREATE POLICY "safe_hands_listing_images_insert"
-ON storage.objects FOR INSERT
-TO authenticated
-WITH CHECK (
-  bucket_id = 'listing-images'
-  AND split_part(name, '/', 1) = auth.uid()::text
-);
-
-DROP POLICY IF EXISTS "safe_hands_listing_images_update" ON storage.objects;
-CREATE POLICY "safe_hands_listing_images_update"
-ON storage.objects FOR UPDATE
-TO authenticated
-USING (
-  bucket_id = 'listing-images'
-  AND split_part(name, '/', 1) = auth.uid()::text
-)
-WITH CHECK (
-  bucket_id = 'listing-images'
-  AND split_part(name, '/', 1) = auth.uid()::text
-);
-
-DROP POLICY IF EXISTS "safe_hands_listing_images_delete" ON storage.objects;
-CREATE POLICY "safe_hands_listing_images_delete"
-ON storage.objects FOR DELETE
-TO authenticated
-USING (
-  bucket_id = 'listing-images'
-  AND split_part(name, '/', 1) = auth.uid()::text
-);
-
--- ========== dispute-evidence ==========
--- Third path segment is always the uploader's user id (see evidenceUpload objectPath).
-
-DROP POLICY IF EXISTS "safe_hands_dispute_evidence_select" ON storage.objects;
-CREATE POLICY "safe_hands_dispute_evidence_select"
-ON storage.objects FOR SELECT
-TO authenticated
-USING (
-  bucket_id = 'dispute-evidence'
-  AND split_part(name, '/', 3) = auth.uid()::text
-);
-
-DROP POLICY IF EXISTS "safe_hands_dispute_evidence_insert" ON storage.objects;
-CREATE POLICY "safe_hands_dispute_evidence_insert"
-ON storage.objects FOR INSERT
-TO authenticated
-WITH CHECK (
-  bucket_id = 'dispute-evidence'
-  AND split_part(name, '/', 3) = auth.uid()::text
-);
-
-DROP POLICY IF EXISTS "safe_hands_dispute_evidence_update" ON storage.objects;
-CREATE POLICY "safe_hands_dispute_evidence_update"
-ON storage.objects FOR UPDATE
-TO authenticated
-USING (
-  bucket_id = 'dispute-evidence'
-  AND split_part(name, '/', 3) = auth.uid()::text
-)
-WITH CHECK (
-  bucket_id = 'dispute-evidence'
-  AND split_part(name, '/', 3) = auth.uid()::text
-);
-
-DROP POLICY IF EXISTS "safe_hands_dispute_evidence_delete" ON storage.objects;
-CREATE POLICY "safe_hands_dispute_evidence_delete"
-ON storage.objects FOR DELETE
-TO authenticated
-USING (
-  bucket_id = 'dispute-evidence'
-  AND split_part(name, '/', 3) = auth.uid()::text
-);
+SELECT
+  '022: no DDL run here (hosted Supabase cannot own storage.objects). Use Dashboard or 022b locally.'
+    AS note;
