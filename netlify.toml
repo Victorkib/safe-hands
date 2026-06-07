@@ -1,0 +1,15 @@
+# Safe Hands Escrow — Netlify + Next.js (@netlify/plugin-nextjs)
+# Docs: https://docs.netlify.com/build/frameworks/framework-setup-guides/nextjs/overview/
+
+[build]
+  command = "npm run build"
+  # Do NOT set publish here — @netlify/plugin-nextjs manages output.
+  # Remove any manual "Publish directory: .next" override in the Netlify UI.
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+[build.environment]
+  NODE_VERSION = "22"
+  # Do NOT set NODE_ENV in Netlify env vars — Netlify sets production automatically for builds.
+  # A custom NODE_ENV breaks Next.js prerender (/_global-error useContext failures).
