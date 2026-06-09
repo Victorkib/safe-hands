@@ -7,15 +7,23 @@ import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
 import DisputeOutcomeCard from '@/components/disputes/DisputeOutcomeCard';
+import DisputeResponseStatus from '@/components/disputes/DisputeResponseStatus';
 import { getResolutionVerdictLabel, getDisputeQueueLabel } from '@/lib/disputeResolutionLabels';
+import {
+  hasAccusedResponded,
+  isResponseWindowExpired,
+  canApplyAutomatedSuggestion,
+} from '@/lib/disputeResponse';
 import {
   DISPUTE_OPEN_STATUSES,
   downloadSuggestionSummaryCsv,
   filterEligibleForBulkSuggestionResolve,
   filterEligibleForSuggestionResolve,
   getBulkIneligibleReason,
+  getQuickResolveBlockReason,
   isBulkResolveFeatureEnabled,
   isEligibleForBulkSuggestionResolve,
+  isEligibleForQuickSuggestionResolve,
   isEligibleForSuggestionResolve,
   resolveDisputeWithSuggestion,
   resolveDisputesWithSuggestionsSequential,
@@ -55,6 +63,8 @@ export default function AdminDisputesPage() {
   const [bulkProgress, setBulkProgress] = useState({ current: 0, total: 0 });
   const [bulkResults, setBulkResults] = useState(null);
   const [quickResolvingId, setQuickResolvingId] = useState(null);
+  const [noResponseLoadingId, setNoResponseLoadingId] = useState(null);
+  const [recomputeLoadingId, setRecomputeLoadingId] = useState(null);
 
   // Check admin access and fetch disputes
   useEffect(() => {
@@ -140,6 +150,9 @@ export default function AdminDisputesPage() {
     }
     if (routeQueueFilter === 'has_suggestion') {
       if (!isEligibleForSuggestionResolve(dispute)) return false;
+    } else if (routeQueueFilter === 'awaiting_accused') {
+      if (!DISPUTE_OPEN_STATUSES.includes(dispute.status)) return false;
+      if (hasAccusedResponded(dispute)) return false;
     } else if (routeQueueFilter !== 'all') {
       const rq = dispute.dispute_queue || 'standard';
       if (rq !== routeQueueFilter) return false;
@@ -337,7 +350,12 @@ export default function AdminDisputesPage() {
   };
 
   const handleQuickResolve = async (dispute) => {
-    if (!isEligibleForSuggestionResolve(dispute) || quickResolvingId) return;
+    if (!isEligibleForQuickSuggestionResolve(dispute) || quickResolvingId) {
+      if (!isEligibleForQuickSuggestionResolve(dispute)) {
+        toast.info(getQuickResolveBlockReason(dispute) || 'Cannot quick-resolve yet');
+      }
+      return;
+    }
 
     setQuickResolvingId(dispute.id);
     try {
@@ -361,6 +379,97 @@ export default function AdminDisputesPage() {
     }
   };
 
+  const handleNoResponseRuling = async (dispute) => {
+    if (!dispute?.id || noResponseLoadingId) return;
+    if (hasAccusedResponded(dispute)) {
+      toast.error('Accused has already responded.');
+      return;
+    }
+    if (!isResponseWindowExpired(dispute)) {
+      toast.error('Response window has not expired yet.');
+      return;
+    }
+    if (
+      !window.confirm(
+        'Confirm the accused did not respond in time? This will resolve in favor of whoever filed the dispute.'
+      )
+    ) {
+      return;
+    }
+
+    setNoResponseLoadingId(dispute.id);
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) {
+        toast.error('Session expired — sign in again');
+        return;
+      }
+
+      const res = await fetch(`/api/admin/disputes/${dispute.id}/no-response`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ confirm: true }),
+      });
+      const result = await res.json();
+      if (!res.ok || !result.success) {
+        toast.error(result.error || 'No-response ruling failed');
+        return;
+      }
+      toast.success(result.verdict_label || 'No-response ruling applied');
+      await fetchDisputes();
+      if (selectedDispute?.id === dispute.id) {
+        setShowModal(false);
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error('No-response ruling failed');
+    } finally {
+      setNoResponseLoadingId(null);
+    }
+  };
+
+  const handleRecomputeRouting = async (dispute) => {
+    if (!dispute?.id || recomputeLoadingId) return;
+    setRecomputeLoadingId(dispute.id);
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) {
+        toast.error('Session expired');
+        return;
+      }
+      const res = await fetch(`/api/admin/disputes/${dispute.id}/no-response`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const result = await res.json();
+      if (!res.ok || !result.success) {
+        toast.error(result.error || 'Recompute failed');
+        return;
+      }
+      toast.success('System suggestion updated');
+      await fetchDisputes();
+    } catch (err) {
+      console.error(err);
+      toast.error('Recompute failed');
+    } finally {
+      setRecomputeLoadingId(null);
+    }
+  };
+
+  const canNoResponseRule = (dispute) =>
+    DISPUTE_OPEN_STATUSES.includes(dispute?.status) &&
+    !hasAccusedResponded(dispute) &&
+    isResponseWindowExpired(dispute);
+
   const renderBulkModal = () => {
     if (!showBulkModal) return null;
 
@@ -374,11 +483,11 @@ export default function AdminDisputesPage() {
       <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/70 p-4 backdrop-blur-sm">
         <div className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
           <div className="border-b border-slate-200 p-6">
-            <h3 className="text-xl font-bold text-slate-900">Resolve all system suggestions</h3>
+            <h3 className="text-xl font-bold text-slate-900">Apply all system suggestions</h3>
             <p className="mt-1 text-sm text-slate-600">
-              {eligibleForBulk.length} dispute(s) will be bulk-resolved. Priority, triage, and thin-filing
-              cases are excluded — use Quick resolve or Review for those ({manualReviewSuggestions.length}{' '}
-              in this view).
+              {eligibleForBulk.length} dispute(s) will be bulk-resolved. Only cases where the accused has
+              responded or the response window expired are included. Priority, triage, and thin-filing cases
+              are excluded ({manualReviewSuggestions.length} in this view need manual review).
             </p>
           </div>
 
@@ -511,7 +620,7 @@ export default function AdminDisputesPage() {
                 >
                   {bulkRunning
                     ? `Resolving (${bulkProgress.current}/${bulkProgress.total})…`
-                    : `Resolve all (${eligibleForBulk.length})`}
+                    : `Apply all (${eligibleForBulk.length})`}
                 </button>
               </>
             )}
@@ -602,6 +711,21 @@ export default function AdminDisputesPage() {
                   <strong>Triage queue:</strong> filed with minimal evidence (e.g. one photo and shorter narrative).
                   Review carefully before resolving.
                 </div>
+              )}
+
+              <DisputeResponseStatus dispute={selectedDispute} />
+
+              {canNoResponseRule(selectedDispute) && (
+                <button
+                  type="button"
+                  onClick={() => handleNoResponseRuling(selectedDispute)}
+                  disabled={noResponseLoadingId === selectedDispute.id}
+                  className="w-full rounded-xl border-2 border-amber-400 bg-amber-50 py-3 text-sm font-bold text-amber-950 hover:bg-amber-100 disabled:opacity-50"
+                >
+                  {noResponseLoadingId === selectedDispute.id
+                    ? 'Applying…'
+                    : 'Accused did not respond — rule for accuser'}
+                </button>
               )}
 
               {selectedDispute.description && (
@@ -840,6 +964,7 @@ export default function AdminDisputesPage() {
           {[
             { id: 'all', label: 'All routes' },
             { id: 'has_suggestion', label: 'Open with suggestions' },
+            { id: 'awaiting_accused', label: 'Awaiting accused' },
             { id: 'priority', label: 'Priority' },
             { id: 'triage', label: 'Triage' },
             { id: 'auto_suggest', label: 'Suggested' },
@@ -870,7 +995,9 @@ export default function AdminDisputesPage() {
               </p>
               <p className="mt-1 text-sm text-violet-900">
                 {eligibleInView.length} open with a verdict · {eligibleForBulk.length} eligible for
-                bulk · {manualReviewSuggestions.length} need manual review first
+                bulk · {manualReviewSuggestions.length} need manual review first ·{' '}
+                {filteredDisputes.filter((d) => !canApplyAutomatedSuggestion(d) && isEligibleForSuggestionResolve(d)).length}{' '}
+                waiting on accused response
               </p>
               {!BULK_RESOLVE_ENABLED && (
                 <p className="mt-2 text-xs text-amber-800">
@@ -896,7 +1023,7 @@ export default function AdminDisputesPage() {
                   disabled={bulkRunning || quickResolvingId !== null}
                   className="rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-violet-700 disabled:opacity-50"
                 >
-                  Resolve all bulk-eligible ({eligibleForBulk.length})
+                  Apply all suggestions ({eligibleForBulk.length})
                 </button>
               )}
             </div>
@@ -928,6 +1055,7 @@ export default function AdminDisputesPage() {
                           Triage
                         </span>
                       )}
+                      <DisputeResponseStatus dispute={dispute} compact />
                     </div>
                     <p className="text-base text-gray-800">{dispute.reason?.replace(/_/g, ' ')}</p>
                     <p className="text-sm text-gray-600 mt-2 line-clamp-2 leading-relaxed">
@@ -972,19 +1100,41 @@ export default function AdminDisputesPage() {
                       </p>
                     )}
                   </div>
-                  <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
+                  <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
+                    {canNoResponseRule(dispute) && (
+                      <button
+                        type="button"
+                        onClick={() => handleNoResponseRuling(dispute)}
+                        disabled={noResponseLoadingId === dispute.id || bulkRunning}
+                        className="rounded-lg border border-amber-400 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-950 hover:bg-amber-100 disabled:opacity-50"
+                      >
+                        {noResponseLoadingId === dispute.id ? 'Ruling…' : 'No response — favor accuser'}
+                      </button>
+                    )}
                     {isEligibleForSuggestionResolve(dispute) && (
                       <button
                         type="button"
                         onClick={() => handleQuickResolve(dispute)}
                         disabled={
+                          !isEligibleForQuickSuggestionResolve(dispute) ||
                           quickResolvingId === dispute.id ||
                           bulkRunning ||
                           quickResolvingId !== null
                         }
+                        title={getQuickResolveBlockReason(dispute) || ''}
                         className="rounded-lg border border-violet-300 bg-violet-50 px-4 py-2.5 text-sm font-semibold text-violet-800 hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {quickResolvingId === dispute.id ? 'Resolving…' : 'Quick resolve'}
+                      </button>
+                    )}
+                    {DISPUTE_OPEN_STATUSES.includes(dispute.status) && (
+                      <button
+                        type="button"
+                        onClick={() => handleRecomputeRouting(dispute)}
+                        disabled={recomputeLoadingId === dispute.id}
+                        className="rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                      >
+                        {recomputeLoadingId === dispute.id ? 'Updating…' : 'Refresh suggestion'}
                       </button>
                     )}
                     <button

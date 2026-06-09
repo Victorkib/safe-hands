@@ -340,3 +340,41 @@ SELECT 'open_disputes_with_suggestion' AS metric,
        count(*) AS total_open
 FROM public.disputes
 WHERE status IN ('open', 'in_review', 'awaiting_response');
+
+-- ─── 7) Response window (027) ─────────────────────────────────────────────────
+ALTER TABLE public.disputes
+  ADD COLUMN IF NOT EXISTS response_due_at TIMESTAMPTZ;
+
+ALTER TABLE public.disputes
+  ADD COLUMN IF NOT EXISTS accused_responded_at TIMESTAMPTZ;
+
+ALTER TABLE public.disputes
+  ADD COLUMN IF NOT EXISTS accused_response_text TEXT;
+
+ALTER TABLE public.disputes
+  ADD COLUMN IF NOT EXISTS no_response_ruling BOOLEAN NOT NULL DEFAULT false;
+
+CREATE INDEX IF NOT EXISTS idx_disputes_awaiting_response
+  ON public.disputes (status, response_due_at)
+  WHERE status IN ('awaiting_response', 'in_review', 'open');
+
+UPDATE public.disputes d
+SET
+  response_due_at = COALESCE(d.response_due_at, d.created_at + INTERVAL '72 hours'),
+  status = CASE
+    WHEN d.status = 'open'
+      AND d.accused_responded_at IS NULL
+      AND d.resolved_at IS NULL
+    THEN 'awaiting_response'
+    ELSE d.status
+  END,
+  updated_at = now()
+WHERE d.status IN ('open', 'awaiting_response', 'in_review')
+  AND d.resolved_at IS NULL
+  AND d.response_due_at IS NULL;
+
+SELECT 'disputes.response_due_at' AS check_name,
+       EXISTS (
+         SELECT 1 FROM information_schema.columns
+         WHERE table_schema = 'public' AND table_name = 'disputes' AND column_name = 'response_due_at'
+       ) AS ok;

@@ -75,25 +75,29 @@ export async function POST(request) {
 
     // Send verification email
     const emailResult = await sendVerificationEmail(
-      user.full_name || 'User',
       email,
+      user.full_name || 'User',
       verificationLink,
     );
 
     if (!emailResult.success) {
       console.error('[v0] Email sending failed:', emailResult.error);
       return Response.json(
-        { error: 'Failed to send verification email. Please try again.' },
+        {
+          error: 'Failed to send verification email. Please try again.',
+          detail: emailResult.error,
+        },
         { status: 500 },
       );
     }
 
-    console.log('[v0] Verification email sent successfully');
+    console.log('[v0] Verification email sent via', emailResult.service || 'email');
 
     return Response.json({
       success: true,
       message: 'Verification email sent. Please check your inbox.',
       expiresIn: '24 hours',
+      service: emailResult.service,
     });
   } catch (error) {
     console.error('[v0] Resend verification error:', error.message);

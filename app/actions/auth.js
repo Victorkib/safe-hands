@@ -1,9 +1,19 @@
 'use server';
 
-import { getServerSupabase } from '@/lib/getServerSupabase';
 import { supabaseAdmin } from '@/lib/supabaseAdmin.js';
 import { sendVerificationEmail } from '@/lib/emailService.js';
 import { createEmailVerificationToken, hashToken } from '@/lib/tokenService.js';
+
+function mapSignupAuthError(message) {
+  const msg = String(message || '');
+  if (/already.*registered|already exists|duplicate|user already/i.test(msg)) {
+    return 'This email is already registered. Please login instead.';
+  }
+  if (/rate limit|too many requests|email.*limit/i.test(msg)) {
+    return 'Registration is temporarily busy. Please try again in a few minutes.';
+  }
+  return msg || 'Failed to create account';
+}
 
 export async function signupUser(formData) {
   try {
@@ -11,27 +21,36 @@ export async function signupUser(formData) {
     const normalizedEmail = String(email || '').trim().toLowerCase();
     const effectiveRole = inviteToken && role === 'buyer' ? 'buyer_seller' : role;
 
-    // Sign up with Supabase Auth
-    // Note: We handle email verification ourselves via custom emails (Gmail)
-    // So we don't use Supabase's built-in email confirmation
-    const supabase = await getServerSupabase();
-    const { data: authData, error: signUpError } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        emailRedirectTo: undefined, // Don't use Supabase's email redirect
-        data: {
+    const { data: existingProfile } = await supabaseAdmin
+      .from('users')
+      .select('id')
+      .eq('email', normalizedEmail)
+      .maybeSingle();
+
+    if (existingProfile?.id) {
+      return {
+        success: false,
+        error: 'This email is already registered. Please login instead.',
+      };
+    }
+
+    // Admin createUser avoids Supabase Auth SMTP rate limits — verification goes via Gmail/Mailjet.
+    const { data: authData, error: signUpError } =
+      await supabaseAdmin.auth.admin.createUser({
+        email: normalizedEmail,
+        password,
+        email_confirm: false,
+        user_metadata: {
           full_name: name,
           phone,
           role: effectiveRole,
         },
-      },
-    });
+      });
 
     if (signUpError) {
       return {
         success: false,
-        error: signUpError.message,
+        error: mapSignupAuthError(signUpError.message),
       };
     }
 
@@ -145,7 +164,7 @@ export async function signupUser(formData) {
       const verificationLink = `${baseUrl}/auth/verify-email?token=${token}`;
 
       const emailResult = await sendVerificationEmail(
-        email,
+        normalizedEmail,
         name,
         verificationLink,
       );

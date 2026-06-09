@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabaseClient';
+import DisputeResponseStatus from '@/components/disputes/DisputeResponseStatus';
+import { isAccusedParty, isDisputeAwaitingDefense } from '@/lib/disputeResponse';
 
 export default function DisputesPage() {
   const router = useRouter();
@@ -156,9 +158,12 @@ export default function DisputesPage() {
                       KES {dispute.transaction?.amount?.toLocaleString() || 'N/A'}
                     </td>
                     <td className="px-6 py-4 text-sm">
-                      <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${statusColors[dispute.status]}`}>
-                        {dispute.status.replace('_', ' ')}
-                      </span>
+                      <div className="flex flex-col gap-1.5">
+                        <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold w-fit ${statusColors[dispute.status]}`}>
+                          {dispute.status.replace('_', ' ')}
+                        </span>
+                        <DisputeResponseStatus dispute={dispute} compact />
+                      </div>
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-700 font-medium">
                       {new Date(dispute.created_at).toLocaleDateString()}
@@ -169,7 +174,9 @@ export default function DisputesPage() {
                           href={`/dashboard/disputes/${dispute.id}`}
                           className="text-blue-600 hover:text-blue-700 font-semibold transition"
                         >
-                          Case
+                          {user && isAccusedParty(dispute, user.id) && isDisputeAwaitingDefense(dispute)
+                            ? 'Submit defense →'
+                            : 'Case'}
                         </Link>
                         {dispute.transaction?.id && (
                           <Link

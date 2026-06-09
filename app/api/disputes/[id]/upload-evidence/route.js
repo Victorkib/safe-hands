@@ -4,6 +4,7 @@ import {
   uploadEvidenceFilesToBucket,
   MAX_FILES_DISPUTE_APPEND,
 } from '@/lib/evidenceUpload';
+import { markAccusedResponded } from '@/lib/disputeRouting';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -111,6 +112,10 @@ export async function POST(request, { params }) {
         photos: uploadedUrls,
         notes: null,
       });
+    }
+
+    if (dispute.raised_against === user.id) {
+      await markAccusedResponded(supabase, id, { moveToReview: true });
     }
 
     return Response.json({

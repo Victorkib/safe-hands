@@ -5,7 +5,12 @@ import {
   MAX_FILES_DISPUTE_CREATE,
 } from '@/lib/evidenceUpload';
 import { validateDisputeDescription, createDisputeWithRpcOrFallback } from '@/lib/disputeCreate';
-import { computeDisputeRouting, applyDisputeRouting } from '@/lib/disputeRouting';
+import {
+  computeDisputeRouting,
+  applyDisputeRouting,
+  initializeDisputeResponseWindow,
+} from '@/lib/disputeRouting';
+import { getDisputeResponseWindowHours } from '@/lib/disputeResponse';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -175,12 +180,18 @@ export async function POST(request) {
       );
     }
 
+    const windowResult = await initializeDisputeResponseWindow(supabase, disputeId);
+    if (windowResult.missingMigration) {
+      console.warn('[disputes] Run scripts/027_dispute_response_window.sql for full response-window support');
+    }
+
     const routing = await computeDisputeRouting(supabase, {
       reason,
       amount: transaction.amount,
       screening,
       transaction_id,
       evidenceCount: uploadedEvidenceUrls.length,
+      allowSuggestion: false,
     });
     await applyDisputeRouting(supabase, disputeId, routing);
 
@@ -196,8 +207,8 @@ export async function POST(request) {
 
     await supabase.from('notifications').insert({
       user_id: raised_against,
-      title: 'Dispute Raised',
-      message: `A dispute has been raised against you for transaction KES ${Number(transaction.amount).toLocaleString()}`,
+      title: 'Dispute Raised — your response required',
+      message: `A dispute was filed against you for KES ${Number(transaction.amount).toLocaleString()}. Submit your defense within ${getDisputeResponseWindowHours()} hours on the dispute page.`,
       type: 'dispute_raised',
       related_transaction_id: transaction_id,
     });
@@ -240,9 +251,7 @@ export async function POST(request) {
         message:
           screening === 'held'
             ? 'Dispute created. It was placed in the admin triage queue because the filing had minimal evidence; an admin will still review it.'
-            : routing.recommended_resolution
-              ? 'Dispute created. The system suggested an outcome for admin review — no automatic payout.'
-              : 'Dispute created successfully',
+            : 'Dispute created. The accused party has been notified and must respond before any system suggestion can be applied.',
       },
       { status: 201 }
     );

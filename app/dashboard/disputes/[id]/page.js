@@ -8,7 +8,16 @@ import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
 import EvidenceUploadPanel from '@/components/evidence/EvidenceUploadPanel';
 import DisputeOutcomeCard from '@/components/disputes/DisputeOutcomeCard';
+import DisputeResponseStatus from '@/components/disputes/DisputeResponseStatus';
 import { getResolutionVerdictLabel } from '@/lib/disputeResolutionLabels';
+import {
+  getDisputeResponseWindowHours,
+  isAccusedParty,
+  isAccuserParty,
+  isDisputeAwaitingDefense,
+  hasAccusedResponded,
+} from '@/lib/disputeResponse';
+import { MIN_DESCRIPTION_LEN } from '@/lib/disputeCreate';
 
 export default function DisputeDetail() {
   const router = useRouter();
@@ -30,6 +39,12 @@ export default function DisputeDetail() {
   const [evidenceTimeline, setEvidenceTimeline] = useState([]);
   const [refundRequest, setRefundRequest] = useState(null);
   const [resolverName, setResolverName] = useState(null);
+  const [showDefenseModal, setShowDefenseModal] = useState(false);
+  const [defenseText, setDefenseText] = useState('');
+  const [defenseFiles, setDefenseFiles] = useState([]);
+  const [defenseTracking, setDefenseTracking] = useState('');
+  const [defenseCourier, setDefenseCourier] = useState('');
+  const [defenseSubmitting, setDefenseSubmitting] = useState(false);
 
   useEffect(() => {
     if (!id || authLoading) return;
@@ -92,6 +107,52 @@ export default function DisputeDetail() {
       } else {
         setError('Dispute not found');
       }
+    }
+  };
+
+  const handleSubmitDefense = async (e) => {
+    e.preventDefault();
+    const trimmed = defenseText.trim();
+    if (!trimmed && defenseFiles.length === 0) {
+      toast.error('Write your defense and/or attach photos.');
+      return;
+    }
+    if (trimmed && trimmed.length < MIN_DESCRIPTION_LEN) {
+      toast.error(`Defense must be at least ${MIN_DESCRIPTION_LEN} characters.`);
+      return;
+    }
+
+    setDefenseSubmitting(true);
+    try {
+      const formData = new FormData();
+      if (trimmed) formData.append('response_text', trimmed);
+      if (defenseTracking.trim()) formData.append('tracking_number', defenseTracking.trim());
+      if (defenseCourier.trim()) formData.append('courier', defenseCourier.trim());
+      defenseFiles.forEach((file) => formData.append('files', file));
+
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch(`/api/disputes/${id}/respond`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.access_token}` },
+        body: formData,
+      });
+      const result = await response.json();
+      if (result.success) {
+        toast.success(result.message || 'Defense submitted');
+        setShowDefenseModal(false);
+        setDefenseText('');
+        setDefenseFiles([]);
+        setDefenseTracking('');
+        setDefenseCourier('');
+        fetchDispute(user.id);
+      } else {
+        toast.error(result.error || 'Failed to submit defense');
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to submit defense');
+    } finally {
+      setDefenseSubmitting(false);
     }
   };
 
@@ -197,6 +258,17 @@ export default function DisputeDetail() {
 
   const isInvolved = user && dispute && (dispute.raised_by === user.id || dispute.raised_against === user.id);
   const isAdmin = userRole === 'admin';
+  const userIsAccused = user && dispute && isAccusedParty(dispute, user.id);
+  const userIsAccuser = user && dispute && isAccuserParty(dispute, user.id);
+  const isSellerAccused =
+    userIsAccused && dispute?.transaction?.seller_id === user.id;
+  const canSubmitDefense =
+    userIsAccused &&
+    isDisputeAwaitingDefense(dispute) &&
+    ['open', 'awaiting_response', 'in_review'].includes(dispute.status);
+  const openForEvidence =
+    isInvolved &&
+    ['open', 'awaiting_response', 'in_review'].includes(dispute?.status);
 
   return (
     <div className="max-w-5xl mx-auto">
@@ -248,7 +320,18 @@ export default function DisputeDetail() {
           <p className="text-2xl font-bold">KES {dispute.transaction?.amount?.toLocaleString() || 'N/A'}</p>
         </div>
 
-        {dispute.recommended_resolution && dispute.status === 'open' && (
+        <DisputeResponseStatus dispute={dispute} className="mb-4" />
+
+        {userIsAccuser && isDisputeAwaitingDefense(dispute) && (
+          <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-950">
+            You filed this dispute. The other party has{' '}
+            <strong>{getDisputeResponseWindowHours()} hours</strong> to submit a defense before an admin
+            can apply automated suggestions or a no-response ruling.
+          </div>
+        )}
+
+        {dispute.recommended_resolution &&
+          ['open', 'awaiting_response', 'in_review'].includes(dispute.status) && (
           <div className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50 p-4">
             <p className="text-sm font-semibold text-indigo-900">System suggestion (admin confirms)</p>
             <p className="text-base text-indigo-950 mt-1">
@@ -256,6 +339,11 @@ export default function DisputeDetail() {
             </p>
             {dispute.recommended_reason && (
               <p className="text-sm text-indigo-800 mt-2">{dispute.recommended_reason}</p>
+            )}
+            {!hasAccusedResponded(dispute) && (
+              <p className="text-xs text-indigo-700 mt-2 font-medium">
+                Suggestion may update after the accused responds or the response window ends.
+              </p>
             )}
           </div>
         )}
@@ -293,6 +381,10 @@ export default function DisputeDetail() {
                         ? 'Seller Shipping Evidence'
                         : evidence.submission_type === 'buyer_receive'
                         ? 'Buyer Delivery Confirmation'
+                        : evidence.submission_type === 'seller_additional'
+                        ? 'Seller Defense / Additional Evidence'
+                        : evidence.submission_type === 'buyer_additional'
+                        ? 'Buyer Defense / Additional Evidence'
                         : 'Additional Evidence'}
                     </p>
                     <p className="text-xs text-gray-600">
@@ -357,21 +449,41 @@ export default function DisputeDetail() {
       </div>
 
       {/* Actions */}
-      {isInvolved && dispute.status === 'open' && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 mb-6">
-          <h2 className="text-xl font-bold text-gray-900 mb-4">Actions</h2>
-          {(dispute.evidence_urls?.length || 0) < 3 && (
-            <button
-              onClick={() => setShowEvidenceModal(true)}
-              className="w-full bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition font-medium mb-2"
-            >
-              Upload Evidence (Max {3 - (dispute.evidence_urls?.length || 0)} more)
-            </button>
-          )}
+      {canSubmitDefense && (
+        <div className="bg-white rounded-2xl border-2 border-orange-200 shadow-sm p-6 mb-6">
+          <h2 className="text-xl font-bold text-gray-900 mb-2">Submit your defense</h2>
+          <p className="text-sm text-gray-600 mb-4">
+            You have been named in this dispute. Explain your side and add proof (delivery photos, tracking,
+            receipts). An admin will review both sides before any verdict.
+          </p>
+          <button
+            type="button"
+            onClick={() => setShowDefenseModal(true)}
+            className="w-full bg-orange-600 text-white px-6 py-3 rounded-xl hover:bg-orange-700 transition font-semibold"
+          >
+            Open defense form
+          </button>
         </div>
       )}
 
-      {isAdmin && dispute.status === 'open' && (
+      {openForEvidence && (dispute.evidence_urls?.length || 0) < 3 && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 mb-6">
+          <h2 className="text-xl font-bold text-gray-900 mb-4">Additional evidence</h2>
+          <p className="text-sm text-gray-600 mb-3">
+            {userIsAccused && hasAccusedResponded(dispute)
+              ? 'Add more supporting photos if needed.'
+              : 'Upload extra photos to support your position.'}
+          </p>
+          <button
+            onClick={() => setShowEvidenceModal(true)}
+            className="w-full bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition font-medium"
+          >
+            Upload evidence (max {3 - (dispute.evidence_urls?.length || 0)} more)
+          </button>
+        </div>
+      )}
+
+      {isAdmin && ['open', 'awaiting_response', 'in_review'].includes(dispute.status) && (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 mb-6">
           <h2 className="text-xl font-bold text-gray-900 mb-4">Admin Actions</h2>
           <button
@@ -380,6 +492,82 @@ export default function DisputeDetail() {
           >
             Resolve Dispute
           </button>
+        </div>
+      )}
+
+      {/* Defense Modal */}
+      {showDefenseModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto">
+            <h3 className="text-xl font-bold mb-2">Your defense</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Be specific. Minimum {MIN_DESCRIPTION_LEN} characters if you write a statement. Photos strongly
+              recommended{isSellerAccused ? ' — include dispatch/delivery proof and tracking if you have it.' : '.'}
+            </p>
+            <form onSubmit={handleSubmitDefense} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="defense-text">
+                  Written defense *
+                </label>
+                <textarea
+                  id="defense-text"
+                  value={defenseText}
+                  onChange={(e) => setDefenseText(e.target.value)}
+                  rows={5}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500"
+                  placeholder="Explain what happened and why the claim should not stand..."
+                />
+              </div>
+              {isSellerAccused && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Tracking number</label>
+                    <input
+                      type="text"
+                      value={defenseTracking}
+                      onChange={(e) => setDefenseTracking(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                      placeholder="Optional"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Courier</label>
+                    <input
+                      type="text"
+                      value={defenseCourier}
+                      onChange={(e) => setDefenseCourier(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                      placeholder="Optional"
+                    />
+                  </div>
+                </div>
+              )}
+              <EvidenceUploadPanel
+                id="dispute-defense-evidence"
+                files={defenseFiles}
+                onChange={setDefenseFiles}
+                maxFiles={3}
+                label="Supporting photos"
+                helpText="Optional but recommended. Max 3 files, 5MB each."
+              />
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="submit"
+                  disabled={defenseSubmitting}
+                  className="flex-1 bg-orange-600 text-white px-4 py-2.5 rounded-xl hover:bg-orange-700 disabled:opacity-50 font-semibold"
+                >
+                  {defenseSubmitting ? 'Submitting…' : 'Submit defense'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowDefenseModal(false)}
+                  className="flex-1 bg-gray-200 text-gray-800 px-4 py-2.5 rounded-xl hover:bg-gray-300 font-semibold"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 

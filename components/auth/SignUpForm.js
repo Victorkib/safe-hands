@@ -16,6 +16,8 @@ export default function SignUpForm() {
   const [showVerificationModal, setShowVerificationModal] = useState(false);
   const [signupEmail, setSignupEmail] = useState('');
   const [signupName, setSignupName] = useState('');
+  const [signupEmailSent, setSignupEmailSent] = useState(true);
+  const [signupEmailError, setSignupEmailError] = useState('');
   const [resendLoading, setResendLoading] = useState(false);
 
   const [formData, setFormData] = useState({
@@ -99,6 +101,8 @@ export default function SignUpForm() {
       // Show verification modal
       setSignupEmail(result.email);
       setSignupName(result.name);
+      setSignupEmailSent(Boolean(result.emailSent));
+      setSignupEmailError(result.emailError || '');
       setShowVerificationModal(true);
 
       // Reset form
@@ -139,10 +143,12 @@ export default function SignUpForm() {
       const data = await response.json();
 
       if (!response.ok) {
-        setErrors({ form: data.error || 'Failed to resend email' });
+        setSignupEmailError(data.error || data.detail || 'Failed to resend email');
         return;
       }
 
+      setSignupEmailSent(true);
+      setSignupEmailError('');
       alert('Verification email resent! Check your inbox.');
     } catch (error) {
       console.error('[v0] Resend error:', error);
@@ -180,13 +186,25 @@ export default function SignUpForm() {
               <span className="text-3xl">✉️</span>
             </div>
             <h1 className="text-2xl font-bold text-gray-900">Check Your Email</h1>
-            <p className="text-gray-600 text-sm mt-1">Verification link sent</p>
+            <p className="text-gray-600 text-sm mt-1">
+              {signupEmailSent ? 'Verification link sent' : 'Account created — resend verification below'}
+            </p>
           </div>
 
           {/* Email Info */}
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-6">
-            <p className="text-gray-700 text-sm mb-3">Verification email sent to:</p>
+            <p className="text-gray-700 text-sm mb-3">
+              {signupEmailSent ? 'Verification email sent to:' : 'Send verification to:'}
+            </p>
             <p className="font-semibold text-blue-600 mb-6 break-all">{signupEmail}</p>
+
+            {!signupEmailSent && (
+              <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                We could not deliver the first email
+                {signupEmailError ? ` (${signupEmailError})` : ''}. Use <strong>Resend Email</strong> — we
+                try Gmail first, then Mailjet automatically.
+              </div>
+            )}
 
             <p className="text-gray-600 text-sm mb-6">
               Click the link in your email to verify your account. The link expires in 24 hours.
