@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
@@ -8,6 +8,20 @@ import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
 import DisputeOutcomeCard from '@/components/disputes/DisputeOutcomeCard';
 import { getResolutionVerdictLabel, getDisputeQueueLabel } from '@/lib/disputeResolutionLabels';
+import {
+  DISPUTE_OPEN_STATUSES,
+  downloadSuggestionSummaryCsv,
+  filterEligibleForBulkSuggestionResolve,
+  filterEligibleForSuggestionResolve,
+  getBulkIneligibleReason,
+  isBulkResolveFeatureEnabled,
+  isEligibleForBulkSuggestionResolve,
+  isEligibleForSuggestionResolve,
+  resolveDisputeWithSuggestion,
+  resolveDisputesWithSuggestionsSequential,
+} from '@/lib/adminDisputeBulk';
+
+const BULK_RESOLVE_ENABLED = isBulkResolveFeatureEnabled();
 
 const statusColors = {
   open: 'bg-blue-100 text-blue-700',
@@ -35,6 +49,12 @@ export default function AdminDisputesPage() {
   const [notes, setNotes] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
   const [actionMessage, setActionMessage] = useState(null);
+  const [showBulkModal, setShowBulkModal] = useState(false);
+  const [bulkConfirmChecked, setBulkConfirmChecked] = useState(false);
+  const [bulkRunning, setBulkRunning] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState({ current: 0, total: 0 });
+  const [bulkResults, setBulkResults] = useState(null);
+  const [quickResolvingId, setQuickResolvingId] = useState(null);
 
   // Check admin access and fetch disputes
   useEffect(() => {
@@ -118,12 +138,39 @@ export default function AdminDisputesPage() {
       const screening = dispute.submission_screening || 'cleared';
       if (screening !== queueFilter) return false;
     }
-    if (routeQueueFilter !== 'all') {
+    if (routeQueueFilter === 'has_suggestion') {
+      if (!isEligibleForSuggestionResolve(dispute)) return false;
+    } else if (routeQueueFilter !== 'all') {
       const rq = dispute.dispute_queue || 'standard';
       if (rq !== routeQueueFilter) return false;
     }
     return true;
   });
+
+  /** Open disputes with a system verdict — eligible for quick resolve */
+  const eligibleInView = useMemo(
+    () => filterEligibleForSuggestionResolve(filteredDisputes),
+    [filteredDisputes]
+  );
+
+  /** Phase 3: subset safe for bulk (excludes priority / triage / thin filing) */
+  const eligibleForBulk = useMemo(
+    () => filterEligibleForBulkSuggestionResolve(eligibleInView),
+    [eligibleInView]
+  );
+
+  const manualReviewSuggestions = useMemo(
+    () => eligibleInView.filter((d) => !isEligibleForBulkSuggestionResolve(d)),
+    [eligibleInView]
+  );
+
+  const isSuggestionWorkspace =
+    routeQueueFilter === 'auto_suggest' || routeQueueFilter === 'has_suggestion';
+
+  const showSuggestionActionBar = isSuggestionWorkspace && eligibleInView.length > 0;
+
+  const showBulkResolveButton =
+    BULK_RESOLVE_ENABLED && showSuggestionActionBar && eligibleForBulk.length > 0;
 
   const resolutionToDecision = (resolution) => {
     if (resolution === 'refund_buyer') return 'buyer_wins';
@@ -215,6 +262,265 @@ export default function AdminDisputesPage() {
     }
   };
 
+  const openBulkModal = () => {
+    if (!BULK_RESOLVE_ENABLED || eligibleForBulk.length === 0) return;
+    setBulkConfirmChecked(false);
+    setBulkResults(null);
+    setBulkProgress({ current: 0, total: eligibleForBulk.length });
+    setShowBulkModal(true);
+  };
+
+  const handleExportCsv = () => {
+    const exportRows =
+      routeQueueFilter === 'has_suggestion' || routeQueueFilter === 'auto_suggest'
+        ? eligibleInView
+        : filteredDisputes;
+    if (exportRows.length === 0) {
+      toast.info('Nothing to export in the current view');
+      return;
+    }
+    downloadSuggestionSummaryCsv(exportRows);
+    toast.success(`Exported ${exportRows.length} row(s) to CSV`);
+  };
+
+  const closeBulkModal = () => {
+    if (bulkRunning) return;
+    setShowBulkModal(false);
+    setBulkConfirmChecked(false);
+    setBulkResults(null);
+    setBulkProgress({ current: 0, total: 0 });
+  };
+
+  const handleBulkResolve = async () => {
+    if (!BULK_RESOLVE_ENABLED || !bulkConfirmChecked || eligibleForBulk.length === 0) return;
+
+    setBulkRunning(true);
+    setBulkResults(null);
+    setBulkProgress({ current: 0, total: eligibleForBulk.length });
+
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) {
+        toast.error('Session expired — sign in again');
+        return;
+      }
+
+      const summary = await resolveDisputesWithSuggestionsSequential(
+        token,
+        eligibleForBulk,
+        ({ index, total }) => {
+          setBulkProgress({ current: index, total });
+        }
+      );
+
+      setBulkResults(summary);
+      await fetchDisputes();
+
+      if (summary.failed === 0) {
+        toast.success(`Resolved ${summary.succeeded} dispute(s) with system suggestions`);
+      } else if (summary.succeeded > 0) {
+        toast.warning(
+          `${summary.succeeded} resolved, ${summary.failed} failed — review failures below`
+        );
+      } else {
+        toast.error('No disputes were resolved — check errors below');
+      }
+    } catch (err) {
+      console.error('Bulk resolve error:', err);
+      toast.error(err?.message || 'Bulk resolve failed');
+    } finally {
+      setBulkRunning(false);
+    }
+  };
+
+  const handleQuickResolve = async (dispute) => {
+    if (!isEligibleForSuggestionResolve(dispute) || quickResolvingId) return;
+
+    setQuickResolvingId(dispute.id);
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) {
+        toast.error('Session expired — sign in again');
+        return;
+      }
+
+      const result = await resolveDisputeWithSuggestion(token, dispute, 'quick');
+      await fetchDisputes();
+      toast.success(result.verdict_label || 'Dispute resolved with system suggestion');
+    } catch (err) {
+      console.error('Quick resolve error:', err);
+      toast.error(err?.message || 'Could not resolve dispute');
+    } finally {
+      setQuickResolvingId(null);
+    }
+  };
+
+  const renderBulkModal = () => {
+    if (!showBulkModal) return null;
+
+    const totalAmount = eligibleForBulk.reduce(
+      (sum, d) => sum + (Number(d.transaction?.amount) || 0),
+      0
+    );
+    const done = Boolean(bulkResults);
+
+    return (
+      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/70 p-4 backdrop-blur-sm">
+        <div className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
+          <div className="border-b border-slate-200 p-6">
+            <h3 className="text-xl font-bold text-slate-900">Resolve all system suggestions</h3>
+            <p className="mt-1 text-sm text-slate-600">
+              {eligibleForBulk.length} dispute(s) will be bulk-resolved. Priority, triage, and thin-filing
+              cases are excluded — use Quick resolve or Review for those ({manualReviewSuggestions.length}{' '}
+              in this view).
+            </p>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-6 space-y-4">
+            {!done && !bulkRunning && (
+              <div className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm text-violet-950">
+                <p>
+                  <strong>Total escrow value:</strong> KES {totalAmount.toLocaleString()}
+                </p>
+                <p className="mt-1 text-violet-900">
+                  Only auto-suggest / standard-route cases with full evidence filing are included in
+                  bulk. Refunds, wallet credits, emails, and notifications run per case.
+                </p>
+              </div>
+            )}
+
+            <div className="overflow-x-auto rounded-xl border border-slate-200">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+                    <th className="px-4 py-3">Dispute</th>
+                    <th className="px-4 py-3">Amount</th>
+                    <th className="px-4 py-3">Suggested verdict</th>
+                    <th className="px-4 py-3">Reason</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {eligibleForBulk.map((d) => (
+                    <tr key={d.id}>
+                      <td className="px-4 py-3 font-mono text-xs">#{d.id.slice(0, 8)}</td>
+                      <td className="px-4 py-3 font-semibold">
+                        KES {Number(d.transaction?.amount || 0).toLocaleString()}
+                      </td>
+                      <td className="px-4 py-3 text-violet-800 font-medium">
+                        {getResolutionVerdictLabel(d.recommended_resolution)}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600 max-w-xs">
+                        {d.recommended_reason || '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {bulkRunning && (
+              <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-4">
+                <p className="text-sm font-semibold text-indigo-900">
+                  Resolving {bulkProgress.current} of {bulkProgress.total}…
+                </p>
+                <div className="mt-3 h-2 overflow-hidden rounded-full bg-indigo-200">
+                  <div
+                    className="h-full rounded-full bg-indigo-600 transition-all duration-300"
+                    style={{
+                      width:
+                        bulkProgress.total > 0
+                          ? `${(bulkProgress.current / bulkProgress.total) * 100}%`
+                          : '0%',
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {done && bulkResults && (
+              <div
+                className={`rounded-xl border p-4 ${
+                  bulkResults.failed === 0
+                    ? 'border-emerald-200 bg-emerald-50'
+                    : 'border-amber-200 bg-amber-50'
+                }`}
+              >
+                <p className="font-semibold text-slate-900">
+                  {bulkResults.succeeded} succeeded · {bulkResults.failed} failed
+                </p>
+                {bulkResults.failed > 0 && (
+                  <ul className="mt-2 space-y-1 text-sm text-rose-800">
+                    {bulkResults.results
+                      .filter((r) => !r.ok)
+                      .map((r) => (
+                        <li key={r.disputeId}>
+                          #{r.disputeId.slice(0, 8)}: {r.error}
+                        </li>
+                      ))}
+                  </ul>
+                )}
+              </div>
+            )}
+
+            {!done && !bulkRunning && (
+              <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-4">
+                <input
+                  type="checkbox"
+                  checked={bulkConfirmChecked}
+                  onChange={(e) => setBulkConfirmChecked(e.target.checked)}
+                  className="mt-1 h-4 w-4 rounded border-slate-300"
+                />
+                <span className="text-sm text-slate-700">
+                  I confirm these system suggestions are appropriate for each dispute listed above.
+                  Admin notes will record that suggestions were bulk-applied.
+                </span>
+              </label>
+            )}
+          </div>
+
+          <div className="flex gap-3 border-t border-slate-200 p-6">
+            {done ? (
+              <button
+                type="button"
+                onClick={closeBulkModal}
+                className="flex-1 rounded-xl bg-indigo-600 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700"
+              >
+                Done
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={closeBulkModal}
+                  disabled={bulkRunning}
+                  className="flex-1 rounded-xl border border-slate-300 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleBulkResolve}
+                  disabled={bulkRunning || !bulkConfirmChecked || eligibleForBulk.length === 0}
+                  className="flex-1 rounded-xl bg-violet-600 py-2.5 text-sm font-semibold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {bulkRunning
+                    ? `Resolving (${bulkProgress.current}/${bulkProgress.total})…`
+                    : `Resolve all (${eligibleForBulk.length})`}
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderModal = () => {
     if (!showModal || !selectedDispute) return null;
 
@@ -278,7 +584,8 @@ export default function AdminDisputesPage() {
                   {selectedDispute.recommended_reason && (
                     <p className="mt-1 text-indigo-900">{selectedDispute.recommended_reason}</p>
                   )}
-                  {selectedDispute.status === 'open' && selectedDispute.recommended_resolution && (
+                  {DISPUTE_OPEN_STATUSES.includes(selectedDispute.status) &&
+                    selectedDispute.recommended_resolution && (
                     <button
                       type="button"
                       onClick={applySuggestedDecision}
@@ -532,6 +839,7 @@ export default function AdminDisputesPage() {
           <span className="text-sm font-semibold text-gray-700">Routing queue</span>
           {[
             { id: 'all', label: 'All routes' },
+            { id: 'has_suggestion', label: 'Open with suggestions' },
             { id: 'priority', label: 'Priority' },
             { id: 'triage', label: 'Triage' },
             { id: 'auto_suggest', label: 'Suggested' },
@@ -551,6 +859,49 @@ export default function AdminDisputesPage() {
             </button>
           ))}
         </div>
+
+        {showSuggestionActionBar && (
+          <div className="flex flex-col gap-4 rounded-xl border border-violet-200 bg-gradient-to-r from-violet-50 to-indigo-50 p-4">
+            <div>
+              <p className="font-semibold text-violet-950">
+                {routeQueueFilter === 'has_suggestion'
+                  ? 'All open disputes with system suggestions'
+                  : 'Suggested queue — actions'}
+              </p>
+              <p className="mt-1 text-sm text-violet-900">
+                {eligibleInView.length} open with a verdict · {eligibleForBulk.length} eligible for
+                bulk · {manualReviewSuggestions.length} need manual review first
+              </p>
+              {!BULK_RESOLVE_ENABLED && (
+                <p className="mt-2 text-xs text-amber-800">
+                  Bulk resolve is disabled (
+                  <code className="rounded bg-white/80 px-1">NEXT_PUBLIC_DISPUTE_BULK_RESOLVE_ENABLED=false</code>
+                  ). Quick resolve and Review still work.
+                </p>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={handleExportCsv}
+                disabled={bulkRunning}
+                className="rounded-xl border border-violet-300 bg-white px-4 py-2.5 text-sm font-semibold text-violet-800 hover:bg-violet-50 disabled:opacity-50"
+              >
+                Export CSV ({eligibleInView.length})
+              </button>
+              {showBulkResolveButton && (
+                <button
+                  type="button"
+                  onClick={openBulkModal}
+                  disabled={bulkRunning || quickResolvingId !== null}
+                  className="rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-violet-700 disabled:opacity-50"
+                >
+                  Resolve all bulk-eligible ({eligibleForBulk.length})
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Disputes List */}
         {filteredDisputes.length === 0 ? (
@@ -590,6 +941,15 @@ export default function AdminDisputesPage() {
                           : ''}
                       </p>
                     )}
+                    {isEligibleForSuggestionResolve(dispute) &&
+                      !isEligibleForBulkSuggestionResolve(dispute) && (
+                      <p
+                        className="mt-2 text-xs font-medium text-amber-800"
+                        title={getBulkIneligibleReason(dispute)}
+                      >
+                        Manual review before bulk — {getBulkIneligibleReason(dispute)}
+                      </p>
+                    )}
                     <div className="flex flex-wrap gap-3 mt-3">
                       <Link
                         href={`/dashboard/disputes/${dispute.id}`}
@@ -612,21 +972,38 @@ export default function AdminDisputesPage() {
                       </p>
                     )}
                   </div>
-                  <button
-                    onClick={() =>
-                      dispute.status === 'resolved' || dispute.status === 'closed'
-                        ? setViewOutcomeDispute(dispute)
-                        : openModal(dispute)
-                    }
-                    disabled={dispute.status === 'closed'}
-                    className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold text-sm transition disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {dispute.status === 'resolved'
-                      ? 'View outcome'
-                      : dispute.status === 'closed'
-                        ? 'Closed'
-                        : 'Review'}
-                  </button>
+                  <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
+                    {isEligibleForSuggestionResolve(dispute) && (
+                      <button
+                        type="button"
+                        onClick={() => handleQuickResolve(dispute)}
+                        disabled={
+                          quickResolvingId === dispute.id ||
+                          bulkRunning ||
+                          quickResolvingId !== null
+                        }
+                        className="rounded-lg border border-violet-300 bg-violet-50 px-4 py-2.5 text-sm font-semibold text-violet-800 hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {quickResolvingId === dispute.id ? 'Resolving…' : 'Quick resolve'}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        dispute.status === 'resolved' || dispute.status === 'closed'
+                          ? setViewOutcomeDispute(dispute)
+                          : openModal(dispute)
+                      }
+                      disabled={dispute.status === 'closed'}
+                      className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {dispute.status === 'resolved'
+                        ? 'View outcome'
+                        : dispute.status === 'closed'
+                          ? 'Closed'
+                          : 'Review'}
+                    </button>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
@@ -674,6 +1051,7 @@ export default function AdminDisputesPage() {
       </div>
 
       {renderModal()}
+      {renderBulkModal()}
 
       {viewOutcomeDispute && (
         <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
