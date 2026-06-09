@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { mpesaClient } from '@/lib/mpesaClient';
 import { getAuthenticatedUser, unauthorizedResponse } from '@/lib/apiAuth';
 import { assertMpesaCallbackConfigured } from '@/lib/mpesaPayment';
+import { resolveMpesaPhone } from '@/lib/mpesaPhone';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -40,12 +41,19 @@ export async function POST(request, { params }) {
       );
     }
 
-    if (!userData.phone_number) {
-      return Response.json(
-        { error: 'Phone number not set. Please update your profile.' },
-        { status: 400 }
-      );
+    let body = {};
+    try {
+      body = await request.json();
+    } catch {
+      body = {};
     }
+
+    const phoneRaw = body?.phone?.trim() || userData.phone_number || '';
+    const phoneResult = resolveMpesaPhone(phoneRaw);
+    if (!phoneResult.ok) {
+      return Response.json({ error: phoneResult.error }, { status: 400 });
+    }
+    const payPhone = phoneResult.phone;
 
     // Get transaction
     const { data: transaction, error: transactionError } = await supabase
@@ -97,7 +105,7 @@ export async function POST(request, { params }) {
 
     // Initiate STK Push
     const mpesaResponse = await mpesaClient.initiateSTKPush({
-      phoneNumber: userData.phone_number,
+      phoneNumber: payPhone,
       amount: transaction.amount,
       accountReference: transaction.id,
       transactionDesc: `Safe Hands Escrow - ${transaction.description.substring(0, 30)}`,
@@ -120,6 +128,7 @@ export async function POST(request, { params }) {
       .from('transactions')
       .update({
         mpesa_ref: checkoutRequestID,
+        mpesa_phone: payPhone,
         status: 'payment_pending',
       })
       .eq('id', id);
@@ -153,7 +162,8 @@ export async function POST(request, { params }) {
 
     return Response.json({
       success: true,
-      message: 'Payment initiated. Check your phone for M-Pesa prompt.',
+      message: `Payment initiated. Check ${payPhone} for the M-Pesa prompt.`,
+      phone: payPhone,
       checkoutRequestID,
       merchantRequestID,
     });

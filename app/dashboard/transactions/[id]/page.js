@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
 import { validateDisputeDescription, MIN_DESCRIPTION_LEN } from '@/lib/disputeCreate';
+import { validatePhone } from '@/lib/validation';
 import EvidenceUploadPanel from '@/components/evidence/EvidenceUploadPanel';
 
 export default function TransactionDetail() {
@@ -21,6 +22,8 @@ export default function TransactionDetail() {
   const [error, setError] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentPhone, setPaymentPhone] = useState('');
+  const [paymentPhoneError, setPaymentPhoneError] = useState('');
   const [showShippingModal, setShowShippingModal] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showDisputeModal, setShowDisputeModal] = useState(false);
@@ -260,7 +263,23 @@ export default function TransactionDetail() {
     return () => document.removeEventListener('visibilitychange', onVisible);
   }, [id, user?.id, fetchTransaction]);
 
+  const openPaymentModal = () => {
+    setPaymentPhone(profile?.phone_number || transaction?.mpesa_phone || '');
+    setPaymentPhoneError('');
+    setShowPaymentModal(true);
+  };
+
   const initiatePayment = async () => {
+    const trimmedPhone = paymentPhone.trim();
+    if (!trimmedPhone) {
+      setPaymentPhoneError('Enter the M-Pesa number that should receive the payment prompt.');
+      return;
+    }
+    if (!validatePhone(trimmedPhone)) {
+      setPaymentPhoneError('Enter a valid Kenyan number (e.g. 07XXXXXXXX or 2547XXXXXXXX).');
+      return;
+    }
+    setPaymentPhoneError('');
     setActionLoading(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -268,7 +287,9 @@ export default function TransactionDetail() {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
         },
+        body: JSON.stringify({ phone: trimmedPhone }),
       });
 
       const result = await response.json();
@@ -1000,7 +1021,7 @@ export default function TransactionDetail() {
         
         {isBuyer && (transaction.status === 'seller_approved' || transaction.status === 'initiated') && (
           <button
-            onClick={() => setShowPaymentModal(true)}
+            onClick={openPaymentModal}
             className="w-full bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition font-medium mb-2"
           >
             Pay with M-Pesa
@@ -1130,16 +1151,49 @@ export default function TransactionDetail() {
         <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl border border-slate-200 shadow-xl p-6 max-w-md w-full">
             <h3 className="text-xl font-bold text-slate-900 mb-2">Confirm M-Pesa Payment</h3>
-            <p className="text-slate-600 mb-5">
-              You will receive an M-Pesa prompt on your phone to confirm payment of KES {transaction.amount.toLocaleString()}.
+            <p className="text-slate-600 mb-4">
+              You will receive an M-Pesa prompt on the number below to confirm payment of KES {transaction.amount.toLocaleString()}.
             </p>
+            <label className="block text-sm font-medium text-slate-700 mb-1" htmlFor="mpesa-payment-phone">
+              M-Pesa phone number
+            </label>
+            <input
+              id="mpesa-payment-phone"
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
+              value={paymentPhone}
+              onChange={(e) => {
+                setPaymentPhone(e.target.value);
+                if (paymentPhoneError) setPaymentPhoneError('');
+              }}
+              placeholder="07XXXXXXXX or 2547XXXXXXXX"
+              className={`w-full px-3 py-2.5 border rounded-xl mb-1 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                paymentPhoneError ? 'border-red-400' : 'border-slate-300'
+              }`}
+            />
+            {paymentPhoneError ? (
+              <p className="text-sm text-red-600 mb-3">{paymentPhoneError}</p>
+            ) : (
+              <p className="text-xs text-slate-500 mb-4">
+                Default from your profile. Change it here if you want the prompt on another number.
+                {!profile?.phone_number && (
+                  <>
+                    {' '}
+                    <Link href="/dashboard/profile" className="text-blue-600 underline">
+                      Add a number in profile
+                    </Link>
+                  </>
+                )}
+              </p>
+            )}
             <div className="flex gap-2">
               <button
                 onClick={initiatePayment}
                 disabled={actionLoading}
                 className="flex-1 bg-blue-600 text-white px-4 py-2.5 rounded-xl hover:bg-blue-700 transition font-semibold"
               >
-                {actionLoading ? 'Processing...' : 'Confirm'}
+                {actionLoading ? 'Sending prompt…' : 'Send M-Pesa prompt'}
               </button>
               <button
                 onClick={() => setShowPaymentModal(false)}
