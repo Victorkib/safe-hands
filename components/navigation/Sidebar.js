@@ -68,6 +68,11 @@ export default function Sidebar() {
           href: '/dashboard/admin/listings',
           icon: '📦',
         },
+        {
+          name: 'Reports & exports',
+          href: '/dashboard/admin/reports',
+          icon: '📥',
+        },
       ];
     } else if (userRole === 'seller' || userRole === 'buyer_seller') {
       const hybridBuying =

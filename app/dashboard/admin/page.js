@@ -130,9 +130,17 @@ export default function AdminDashboard() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
-        <p className="text-gray-600 mt-1">Platform oversight and management tools</p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
+          <p className="text-gray-600 mt-1">Platform oversight and management tools</p>
+        </div>
+        <Link
+          href="/dashboard/admin/reports"
+          className="rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-5 py-2.5 text-sm font-bold text-white shadow-md hover:from-indigo-700 hover:to-violet-700 transition"
+        >
+          Reports & exports →
+        </Link>
       </div>
 
       {/* Stats Grid */}

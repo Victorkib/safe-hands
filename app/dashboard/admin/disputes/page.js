@@ -913,12 +913,20 @@ export default function AdminDisputesPage() {
               Review evidence, make fair decisions, and close disputes with complete audit clarity.
             </p>
           </div>
-          <Link
-            href="/dashboard/admin/disputes/appeals"
-            className="rounded-xl border border-white/30 bg-white/10 px-5 py-2.5 text-sm font-bold text-white backdrop-blur hover:bg-white/20 transition"
-          >
-            Post-verdict reviews →
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/dashboard/admin/disputes/appeals"
+              className="rounded-xl border border-white/30 bg-white/10 px-5 py-2.5 text-sm font-bold text-white backdrop-blur hover:bg-white/20 transition"
+            >
+              Post-verdict reviews →
+            </Link>
+            <Link
+              href="/dashboard/admin/reports"
+              className="rounded-xl border border-white/30 bg-white/10 px-5 py-2.5 text-sm font-bold text-white backdrop-blur hover:bg-white/20 transition"
+            >
+              Reports →
+            </Link>
+          </div>
         </div>
       </div>
 
