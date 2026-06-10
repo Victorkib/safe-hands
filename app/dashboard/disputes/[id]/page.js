@@ -8,6 +8,7 @@ import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
 import EvidenceUploadPanel from '@/components/evidence/EvidenceUploadPanel';
 import DisputeOutcomeCard from '@/components/disputes/DisputeOutcomeCard';
+import DisputeAppealPanel from '@/components/disputes/DisputeAppealPanel';
 import DisputeResponseStatus from '@/components/disputes/DisputeResponseStatus';
 import { getResolutionVerdictLabel } from '@/lib/disputeResolutionLabels';
 import {
@@ -45,6 +46,7 @@ export default function DisputeDetail() {
   const [defenseTracking, setDefenseTracking] = useState('');
   const [defenseCourier, setDefenseCourier] = useState('');
   const [defenseSubmitting, setDefenseSubmitting] = useState(false);
+  const [appeals, setAppeals] = useState([]);
 
   useEffect(() => {
     if (!id || authLoading) return;
@@ -104,6 +106,14 @@ export default function DisputeDetail() {
           .limit(1)
           .maybeSingle();
         setRefundRequest(refund || null);
+
+        const appealsRes = await fetch(`/api/disputes/${id}/appeals`, {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        const appealsJson = await appealsRes.json();
+        if (appealsJson.success) {
+          setAppeals(appealsJson.appeals || []);
+        }
       } else {
         setError('Dispute not found');
       }
@@ -280,15 +290,26 @@ export default function DisputeDetail() {
       </div>
 
       {(dispute.status === 'resolved' || dispute.status === 'closed') && (
-        <div className="mb-6">
-          <DisputeOutcomeCard
-            dispute={dispute}
-            transaction={dispute.transaction}
-            resolverName={resolverName}
-            refundRequest={refundRequest}
-            demoMode={Boolean(refundRequest?.simulated)}
-          />
-        </div>
+        <>
+          <div className="mb-6">
+            <DisputeOutcomeCard
+              dispute={dispute}
+              transaction={dispute.transaction}
+              resolverName={resolverName}
+              refundRequest={refundRequest}
+              demoMode={Boolean(refundRequest?.simulated)}
+            />
+          </div>
+          {isInvolved && user && (
+            <DisputeAppealPanel
+              dispute={dispute}
+              transaction={dispute.transaction}
+              userId={user.id}
+              appeals={appeals}
+              onRefresh={() => fetchDispute(user.id)}
+            />
+          )}
+        </>
       )}
 
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 mb-6">

@@ -906,8 +906,20 @@ export default function AdminDisputesPage() {
   return (
     <div className="space-y-8">
       <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-violet-700 via-indigo-700 to-blue-700 text-white p-8 shadow-lg">
-        <h1 className="text-3xl font-bold tracking-tight">Manage Disputes</h1>
-        <p className="text-indigo-100 mt-2">Review evidence, make fair decisions, and close disputes with complete audit clarity.</p>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Manage Disputes</h1>
+            <p className="text-indigo-100 mt-2 max-w-2xl">
+              Review evidence, make fair decisions, and close disputes with complete audit clarity.
+            </p>
+          </div>
+          <Link
+            href="/dashboard/admin/disputes/appeals"
+            className="rounded-xl border border-white/30 bg-white/10 px-5 py-2.5 text-sm font-bold text-white backdrop-blur hover:bg-white/20 transition"
+          >
+            Post-verdict reviews →
+          </Link>
+        </div>
       </div>
 
       {error && (

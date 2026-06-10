@@ -94,10 +94,15 @@ export default function DisputeOutcomeCard({
         )}
       </dl>
 
+      <p className="mt-4 text-xs text-slate-500">
+        Dissatisfied with this outcome? The losing party may request an admin review within 7 days
+        below — funds do not change until an overturn is confirmed.
+      </p>
+
       {transaction?.id && (
         <Link
           href={`/dashboard/transactions/${transaction.id}`}
-          className="inline-block mt-4 text-sm font-semibold text-blue-700 hover:text-blue-900"
+          className="inline-block mt-3 text-sm font-semibold text-blue-700 hover:text-blue-900"
         >
           View transaction →
         </Link>

@@ -26,6 +26,17 @@ Safe Hands Escrow is a full-stack web application built with Next.js and Supabas
 - **HTTP Client:** Fetch API
 - **Data Fetching:** SWR
 
+flowchart TD
+Pay[Buyer pays M-Pesa] --> Escrow[Escrow]
+Escrow --> Ship[Seller ships]
+Ship --> Delivered[Delivered + 3d auto-release clock]
+Delivered -->|Buyer confirms OR 3 days| Released[Seller wallet credited instantly]
+Delivered -->|Dispute filed| Disputed[Disputed]
+Disputed -->|72h response window| Review[Admin review]
+Review -->|Refund buyer| Refund[Refund row - demo instant / live pending]
+Review -->|Release seller| Released
+Review -->|Future: appeal within 7d| Appeal[Appeal queue - not built yet]
+
 ## 📋 Current Status
 
 ### Phase 1: Foundation & Setup ✅ COMPLETED
@@ -101,6 +112,7 @@ Full authentication system implemented:
 - ✅ Input validation
 - ✅ RLS policies (fixed infinite recursion)
 - ✅ Rate limiting
+
 - [ ] CORS configuration
 - [ ] Monitoring
 
@@ -113,6 +125,7 @@ Full authentication system implemented:
 ### Phase 9: Marketplace & Listings ✅ COMPLETED
 
 **Implementation Summary:**
+
 - ✅ `listings` table in database (id, seller_id, title, description, price, category, images, status)
 - ✅ `categories` table (id, name, slug) with default categories
 - ✅ POST /api/listings - Create listing (sellers only)
@@ -133,9 +146,11 @@ Full authentication system implemented:
 - ✅ SQL script at scripts/006_create_listings_tables.sql
 
 **Manual Setup Required:**
+
 - ❌ Supabase Storage bucket for listing images (user action needed)
 
 **Platform Status:**
+
 - Sellers can now create listings with images
 - Buyers can browse marketplace with search and filters
 - Buyers can click "Buy Now" to create transactions
@@ -144,12 +159,14 @@ Full authentication system implemented:
 ### Phase 10: Ratings & Reviews 📋 FUTURE
 
 **What's Missing:**
+
 - Database has `ratings` table but no implementation
 - No API endpoints for ratings
 - No UI for users to rate/review transactions
 - No rating display on user profiles
 
 **What Needs Implementation:**
+
 - [ ] POST /api/ratings - Create rating
 - [ ] GET /api/ratings/[transaction_id] - Get transaction rating
 - [ ] GET /api/users/[id]/ratings - Get user ratings
@@ -161,12 +178,14 @@ Full authentication system implemented:
 ### Phase 11: KYC Verification 📋 FUTURE
 
 **What's Missing:**
+
 - Database has `kyc_status` and `kyc_data` fields but no implementation
 - No KYC upload endpoints
 - No admin KYC review interface
 - No ID verification integration
 
 **What Needs Implementation:**
+
 - [ ] POST /api/kyc/submit - Submit KYC documents
 - [ ] GET /api/kyc/[user_id] - Get KYC status
 - [ ] POST /api/kyc/[user_id]/review - Admin review KYC
@@ -178,12 +197,14 @@ Full authentication system implemented:
 ### Phase 12: Admin Dashboard UI 📋 FUTURE
 
 **What's Missing:**
+
 - Admin dispute resolution API exists but no UI
 - No admin overview dashboard
 - No user management interface
 - No transaction monitoring interface
 
 **What Needs Implementation:**
+
 - [ ] /dashboard/admin - Admin overview dashboard
 - [ ] /dashboard/admin/disputes - Dispute resolution interface
 - [ ] /dashboard/admin/users - User management
@@ -194,12 +215,14 @@ Full authentication system implemented:
 ### Phase 13: Notification Center UI 📋 FUTURE
 
 **What's Missing:**
+
 - Notification service exists (lib/notificationService.js) but no UI
 - Users cannot view notifications
 - No notification bell icon in navbar
 - No notification settings
 
 **What Needs Implementation:**
+
 - [ ] /dashboard/notifications - Notification center page
 - [ ] Notification bell component in navbar
 - [ ] Notification count badge
@@ -210,12 +233,14 @@ Full authentication system implemented:
 ### Phase 14: B2C Payment Integration 📋 FUTURE
 
 **What's Missing:**
+
 - M-Pesa B2C API integration for fund releases
 - MPESA_SECURITY_CREDENTIAL configuration
 - Seller payout system
 - Transaction completion with actual fund transfer
 
 **What Needs Implementation:**
+
 - [ ] B2C API integration in lib/mpesaClient.js
 - [ ] POST /api/transactions/[id]/release-funds - Trigger B2C payout
 - [ ] MPESA_SECURITY_CREDENTIAL configuration
@@ -351,6 +376,7 @@ safe-hands-escrow/
    ```
 
 8. **Open in browser**
+
    ```
    http://localhost:3000
    ```
